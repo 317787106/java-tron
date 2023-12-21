@@ -241,7 +241,8 @@ public class PrecompiledContracts {
       return verifyBurnProof;
     }
     if (VMConfig.allowShieldedTRC20Transaction() && address.equals(merkleHashAddr)) {
-      return merkleHash;
+      throw new RuntimeException("getPath not allowed");
+      //return merkleHash;
     }
     if (VMConfig.allowTvmVote() && address.equals(rewardBalanceAddr)) {
       return rewardBalance;
