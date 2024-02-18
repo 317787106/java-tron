@@ -1618,15 +1618,15 @@ public class Program {
         if (VMConfig.closeShieldedTRC20Transaction() != 0) {
           if (contract == PrecompiledContracts.verifyMintProof
               && VMConfig.closeShieldedTRC20Transaction() >= 1) {
-            this.result.setRuntimeError("shield mint not allowed");
+            this.result.setRuntimeError(PrecompiledContracts.mintNotAllowed);
           }
           if (contract == PrecompiledContracts.verifyTransferProof
               && VMConfig.closeShieldedTRC20Transaction() >= 2) {
-            this.result.setRuntimeError("shield transfer not allowed");
+            this.result.setRuntimeError(PrecompiledContracts.transferNotAllowed);
           }
           if (contract == PrecompiledContracts.verifyBurnProof
               && VMConfig.closeShieldedTRC20Transaction() >= 3) {
-            this.result.setRuntimeError("shield burn not allowed");
+            this.result.setRuntimeError(PrecompiledContracts.burnNotAllowed);
           }
         }
         deposit.commit();
