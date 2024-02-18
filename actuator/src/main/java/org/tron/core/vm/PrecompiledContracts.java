@@ -85,9 +85,9 @@ public class PrecompiledContracts {
   private static final BatchValidateSign batchValidateSign = new BatchValidateSign();
   private static final ValidateMultiSign validateMultiSign = new ValidateMultiSign();
 
-  private static final VerifyMintProof verifyMintProof = new VerifyMintProof();
-  private static final VerifyTransferProof verifyTransferProof = new VerifyTransferProof();
-  private static final VerifyBurnProof verifyBurnProof = new VerifyBurnProof();
+  public static final VerifyMintProof verifyMintProof = new VerifyMintProof();
+  public static final VerifyTransferProof verifyTransferProof = new VerifyTransferProof();
+  public static final VerifyBurnProof verifyBurnProof = new VerifyBurnProof();
 
   private static final MerkleHash merkleHash = new MerkleHash();
 
@@ -194,6 +194,9 @@ public class PrecompiledContracts {
   private static final DataWord blake2FAddr = new DataWord(
       "0000000000000000000000000000000000000000000000000000000000020009");
 
+  public static final String mintNotAllowed = "shield mint not allowed";
+  public static final String transferNotAllowed = "shield transfer not allowed";
+  public static final String burnNotAllowed = "shield burn not allowed";
 
   public static PrecompiledContract getContractForAddress(DataWord address) {
 
@@ -1229,8 +1232,8 @@ public class PrecompiledContracts {
 
     @Override
     public Pair<Boolean, byte[]> execute(byte[] data) {
-      if (VMConfig.closeShieldedTRC20Transaction() >= 1) {
-        throw new RuntimeException("mint not allowed");
+      if (VMConfig.closeShieldedTRC20Transaction() >= 1){
+        return Pair.of(true, DataWord.ZERO().getData());
       }
       if (data == null) {
         return Pair.of(true, DataWord.ZERO().getData());
@@ -1310,8 +1313,8 @@ public class PrecompiledContracts {
 
     @Override
     public Pair<Boolean, byte[]> execute(byte[] data) {
-      if (VMConfig.closeShieldedTRC20Transaction() >= 2) {
-        throw new RuntimeException("transfer not allowed");
+      if (VMConfig.closeShieldedTRC20Transaction() >= 2){
+        return Pair.of(true, DataWord.ZERO().getData());
       }
       if (data == null) {
         return Pair.of(true, DataWord.ZERO().getData());
@@ -1590,8 +1593,8 @@ public class PrecompiledContracts {
 
     @Override
     public Pair<Boolean, byte[]> execute(byte[] data) {
-      if (VMConfig.closeShieldedTRC20Transaction() >= 3) {
-        throw new RuntimeException("burn not allowed");
+      if (VMConfig.closeShieldedTRC20Transaction() >= 3){
+        return Pair.of(true, DataWord.ZERO().getData());
       }
       if (data == null) {
         return Pair.of(true, DataWord.ZERO().getData());

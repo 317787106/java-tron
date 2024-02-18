@@ -39,6 +39,7 @@ import org.tron.core.utils.TransactionUtil;
 import org.tron.core.vm.EnergyCost;
 import org.tron.core.vm.LogInfoTriggerParser;
 import org.tron.core.vm.OperationRegistry;
+import org.tron.core.vm.PrecompiledContracts;
 import org.tron.core.vm.VM;
 import org.tron.core.vm.VMConstant;
 import org.tron.core.vm.VMUtils;
@@ -234,7 +235,11 @@ public class VMActuator implements Actuator2 {
             result.setRuntimeError(result.getException().getMessage());
             throw result.getException();
           } else {
-            result.setRuntimeError("REVERT opcode executed");
+            if (!PrecompiledContracts.mintNotAllowed.equals(result.getRuntimeError()) &&
+                !PrecompiledContracts.transferNotAllowed.equals(result.getRuntimeError()) &&
+                !PrecompiledContracts.burnNotAllowed.equals(result.getRuntimeError())) {
+              result.setRuntimeError("REVERT opcode executed");
+            }
           }
         } else {
           rootRepository.commit();

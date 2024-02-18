@@ -59,6 +59,7 @@ import org.tron.core.vm.MessageCall;
 import org.tron.core.vm.Op;
 import org.tron.core.vm.OperationRegistry;
 import org.tron.core.vm.PrecompiledContracts;
+import org.tron.core.vm.PrecompiledContracts.PrecompiledContract;
 import org.tron.core.vm.VM;
 import org.tron.core.vm.VMConstant;
 import org.tron.core.vm.VMUtils;
@@ -1613,6 +1614,21 @@ public class Program {
         this.refundEnergy(msg.getEnergy().longValue() - requiredEnergy, CALL_PRE_COMPILED);
         this.stackPushOne();
         returnDataBuffer = out.getRight();
+
+        if (VMConfig.closeShieldedTRC20Transaction() != 0) {
+          if (contract == PrecompiledContracts.verifyMintProof
+              && VMConfig.closeShieldedTRC20Transaction() >= 1) {
+            this.result.setRuntimeError("shield mint not allowed");
+          }
+          if (contract == PrecompiledContracts.verifyTransferProof
+              && VMConfig.closeShieldedTRC20Transaction() >= 2) {
+            this.result.setRuntimeError("shield transfer not allowed");
+          }
+          if (contract == PrecompiledContracts.verifyBurnProof
+              && VMConfig.closeShieldedTRC20Transaction() >= 3) {
+            this.result.setRuntimeError("shield burn not allowed");
+          }
+        }
         deposit.commit();
       } else {
         // spend all energy on failure, push zero and revert state changes
