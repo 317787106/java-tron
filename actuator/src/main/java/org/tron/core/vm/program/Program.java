@@ -59,7 +59,6 @@ import org.tron.core.vm.MessageCall;
 import org.tron.core.vm.Op;
 import org.tron.core.vm.OperationRegistry;
 import org.tron.core.vm.PrecompiledContracts;
-import org.tron.core.vm.PrecompiledContracts.PrecompiledContract;
 import org.tron.core.vm.VM;
 import org.tron.core.vm.VMConstant;
 import org.tron.core.vm.VMUtils;
@@ -1616,15 +1615,15 @@ public class Program {
         returnDataBuffer = out.getRight();
 
         if (VMConfig.closeShieldedTRC20Transaction() != 0) {
-          if (contract == PrecompiledContracts.verifyMintProof
+          if (contract == PrecompiledContracts.getVerifyMintProof()
               && VMConfig.closeShieldedTRC20Transaction() >= 1) {
             this.result.setRuntimeError(PrecompiledContracts.mintNotAllowed);
           }
-          if (contract == PrecompiledContracts.verifyTransferProof
+          if (contract == PrecompiledContracts.getVerifyTransferProof()
               && VMConfig.closeShieldedTRC20Transaction() >= 2) {
             this.result.setRuntimeError(PrecompiledContracts.transferNotAllowed);
           }
-          if (contract == PrecompiledContracts.verifyBurnProof
+          if (contract == PrecompiledContracts.getVerifyBurnProof()
               && VMConfig.closeShieldedTRC20Transaction() >= 3) {
             this.result.setRuntimeError(PrecompiledContracts.burnNotAllowed);
           }

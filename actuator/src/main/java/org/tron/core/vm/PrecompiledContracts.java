@@ -85,9 +85,12 @@ public class PrecompiledContracts {
   private static final BatchValidateSign batchValidateSign = new BatchValidateSign();
   private static final ValidateMultiSign validateMultiSign = new ValidateMultiSign();
 
-  public static final VerifyMintProof verifyMintProof = new VerifyMintProof();
-  public static final VerifyTransferProof verifyTransferProof = new VerifyTransferProof();
-  public static final VerifyBurnProof verifyBurnProof = new VerifyBurnProof();
+  @Getter
+  private static final VerifyMintProof verifyMintProof = new VerifyMintProof();
+  @Getter
+  private static final VerifyTransferProof verifyTransferProof = new VerifyTransferProof();
+  @Getter
+  private static final VerifyBurnProof verifyBurnProof = new VerifyBurnProof();
 
   private static final MerkleHash merkleHash = new MerkleHash();
 
