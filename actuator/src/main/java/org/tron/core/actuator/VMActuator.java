@@ -249,7 +249,11 @@ public class VMActuator implements Actuator2 {
                 .parseLogInfos(program.getResult().getLogInfoList(), rootRepository);
             program.getResult().setTriggerList(triggers);
           }
-
+          if (PrecompiledContracts.mintNotAllowed.equals(result.getRuntimeError()) ||
+              PrecompiledContracts.transferNotAllowed.equals(result.getRuntimeError()) ||
+              PrecompiledContracts.burnNotAllowed.equals(result.getRuntimeError())) {
+            result.setRevert();
+          }
         }
       } else {
         rootRepository.commit();
