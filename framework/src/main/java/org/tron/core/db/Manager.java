@@ -236,6 +236,7 @@ public class Manager {
   // the capacity is equal to Integer.MAX_VALUE default
   private BlockingQueue<TransactionCapsule> rePushTransactions;
   private BlockingQueue<TriggerCapsule> triggerCapsuleQueue;
+  private int maxTriggerQueueSize = 300_000;
   // log filter
   private boolean isRunFilterProcessThread = true;
   private BlockingQueue<FilterTriggerCapsule> filterCapsuleQueue;
@@ -810,6 +811,22 @@ public class Manager {
     }
   }
 
+  void checkTriggerQueue() {
+    if (!Args.getInstance().isCheckTriggerQueueEnable()) {
+      return;
+    }
+    while (triggerCapsuleQueue.size() > maxTriggerQueueSize) {
+      logger.error(
+          "Size of triggerCapsuleQueue is too big {} > {}, please check if event plugin works",
+          triggerCapsuleQueue.size(), maxTriggerQueueSize);
+      try {
+        Thread.sleep(2000);
+      } catch (InterruptedException e) {
+        throw new RuntimeException(e);
+      }
+    }
+  }
+
   private boolean containsTransaction(TransactionCapsule transactionCapsule) {
     return containsTransaction(transactionCapsule.getTransactionId().getBytes());
   }
@@ -1197,6 +1214,7 @@ public class Manager {
       DupTransactionException, TransactionExpirationException,
       BadNumberBlockException, BadBlockException, NonCommonBlockException,
       ReceiptCheckErrException, VMIllegalException, ZksnarkException, EventBloomException {
+    checkTriggerQueue();
     setBlockWaitLock(true);
     try {
       synchronized (this) {

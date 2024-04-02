@@ -196,6 +196,8 @@ public class Constant {
 
   public static final String NODE_MAX_TRANSACTION_PENDING_SIZE = "node.maxTransactionPendingSize";
 
+  public static final String NODE_CHECK_TRIGGER_QUEUE_Enable = "node.checkTriggerQueueEnable";
+
   public static final String NODE_PENDING_TRANSACTION_TIMEOUT = "node.pendingTransactionTimeout";
 
   public static final String STORAGE_NEEDTO_UPDATE_ASSET = "storage.needToUpdateAsset";

@@ -473,6 +473,9 @@ public class CommonParameter {
   public int maxTransactionPendingSize;
   @Getter
   @Setter
+  public boolean checkTriggerQueueEnable = false;
+  @Getter
+  @Setter
   public long pendingTransactionTimeout;
   @Getter
   @Setter

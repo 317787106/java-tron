@@ -846,6 +846,9 @@ public class Args extends CommonParameter {
     PARAMETER.maxTransactionPendingSize = config.hasPath(Constant.NODE_MAX_TRANSACTION_PENDING_SIZE)
         ? config.getInt(Constant.NODE_MAX_TRANSACTION_PENDING_SIZE) : 2000;
 
+    PARAMETER.checkTriggerQueueEnable = config.hasPath(Constant.NODE_CHECK_TRIGGER_QUEUE_Enable)
+        && config.getBoolean(Constant.NODE_CHECK_TRIGGER_QUEUE_Enable);
+
     PARAMETER.pendingTransactionTimeout = config.hasPath(Constant.NODE_PENDING_TRANSACTION_TIMEOUT)
         ? config.getLong(Constant.NODE_PENDING_TRANSACTION_TIMEOUT) : 60_000;
 
