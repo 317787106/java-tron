@@ -65,6 +65,7 @@ public class NodeInfoService {
     setConfigNodeInfo(nodeInfo);
     setBlockInfo(nodeInfo);
     setCheatWitnessInfo(nodeInfo);
+    setOriginConfig(nodeInfo);
     return nodeInfo;
   }
 
@@ -205,6 +206,10 @@ public class NodeInfoService {
         .entrySet()) {
       nodeInfo.getCheatWitnessInfoMap().put(entry.getKey(), entry.getValue().toString());
     }
+  }
+
+  protected void setOriginConfig(NodeInfo nodeInfo) {
+    nodeInfo.setOriginConfig(parameter.originConfig);
   }
 
 }

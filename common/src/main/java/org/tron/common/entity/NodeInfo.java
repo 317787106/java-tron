@@ -4,6 +4,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import lombok.Getter;
+import lombok.Setter;
 import org.tron.common.entity.NodeInfo.MachineInfo.DeadLockThreadInfo;
 import org.tron.common.entity.NodeInfo.MachineInfo.MemoryDescInfo;
 import org.tron.protos.Protocol;
@@ -11,123 +13,49 @@ import org.tron.protos.Protocol;
 public class NodeInfo {
 
   /*block information*/
+  @Getter
+  @Setter
   private long beginSyncNum;
+  @Getter
+  @Setter
   private String block;
+  @Setter
+  @Getter
   private String solidityBlock;
 
   /*connect information*/
+  @Setter
+  @Getter
   private int currentConnectCount;
+  @Setter
+  @Getter
   private int activeConnectCount;
+  @Getter
+  @Setter
   private int passiveConnectCount;
+  @Getter
+  @Setter
   private long totalFlow;
+  @Getter
+  @Setter
   private List<PeerInfo> peerList = new ArrayList<>();
 
   /*node config information*/
+  @Setter
+  @Getter
   private ConfigNodeInfo configNodeInfo;
   /*machine information*/
+  @Setter
+  @Getter
   private MachineInfo machineInfo;
 
+  @Getter
+  @Setter
   private Map<String, String> cheatWitnessInfoMap = new HashMap<>();
 
-  public long getBeginSyncNum() {
-    return beginSyncNum;
-  }
-
-  public NodeInfo setBeginSyncNum(long beginSyncNum) {
-    this.beginSyncNum = beginSyncNum;
-    return this;
-  }
-
-  public String getBlock() {
-    return block;
-  }
-
-  public NodeInfo setBlock(String block) {
-    this.block = block;
-    return this;
-  }
-
-  public String getSolidityBlock() {
-    return solidityBlock;
-  }
-
-  public NodeInfo setSolidityBlock(String solidityBlock) {
-    this.solidityBlock = solidityBlock;
-    return this;
-  }
-
-  public int getCurrentConnectCount() {
-    return currentConnectCount;
-  }
-
-  public NodeInfo setCurrentConnectCount(int currentConnectCount) {
-    this.currentConnectCount = currentConnectCount;
-    return this;
-  }
-
-  public int getActiveConnectCount() {
-    return activeConnectCount;
-  }
-
-  public NodeInfo setActiveConnectCount(int activeConnectCount) {
-    this.activeConnectCount = activeConnectCount;
-    return this;
-  }
-
-  public int getPassiveConnectCount() {
-    return passiveConnectCount;
-  }
-
-  public NodeInfo setPassiveConnectCount(int passiveConnectCount) {
-    this.passiveConnectCount = passiveConnectCount;
-    return this;
-  }
-
-  public long getTotalFlow() {
-    return totalFlow;
-  }
-
-  public NodeInfo setTotalFlow(long totalFlow) {
-    this.totalFlow = totalFlow;
-    return this;
-  }
-
-  public List<PeerInfo> getPeerList() {
-    return new ArrayList<>(peerList);
-  }
-
-  public NodeInfo setPeerList(List<PeerInfo> peerList) {
-    this.peerList = new ArrayList<>(peerList);
-    return this;
-  }
-
-  public ConfigNodeInfo getConfigNodeInfo() {
-    return configNodeInfo;
-  }
-
-  public NodeInfo setConfigNodeInfo(ConfigNodeInfo configNodeInfo) {
-    this.configNodeInfo = configNodeInfo;
-    return this;
-  }
-
-  public MachineInfo getMachineInfo() {
-    return machineInfo;
-  }
-
-  public NodeInfo setMachineInfo(MachineInfo machineInfo) {
-    this.machineInfo = machineInfo;
-    return this;
-  }
-
-  public Map<String, String> getCheatWitnessInfoMap() {
-    return cheatWitnessInfoMap;
-  }
-
-  public NodeInfo setCheatWitnessInfoMap(
-      Map<String, String> cheatWitnessInfoMap) {
-    this.cheatWitnessInfoMap = cheatWitnessInfoMap;
-    return this;
-  }
+  @Setter
+  @Getter
+  private Map<String, Object> originConfig = new HashMap<>();
 
   public Protocol.NodeInfo transferToProtoEntity() {
     Protocol.NodeInfo.Builder builder = Protocol.NodeInfo.newBuilder();
@@ -236,6 +164,8 @@ public class NodeInfo {
     return builder.build();
   }
 
+  @Setter
+  @Getter
   public static class MachineInfo {
 
     /*machine information*/
@@ -253,124 +183,8 @@ public class NodeInfo {
     private List<MemoryDescInfo> memoryDescInfoList = new ArrayList<>();
     private List<DeadLockThreadInfo> deadLockThreadInfoList = new ArrayList<>();
 
-    public int getThreadCount() {
-      return threadCount;
-    }
-
-    public MachineInfo setThreadCount(int threadCount) {
-      this.threadCount = threadCount;
-      return this;
-    }
-
-    public int getCpuCount() {
-      return cpuCount;
-    }
-
-    public MachineInfo setCpuCount(int cpuCount) {
-      this.cpuCount = cpuCount;
-      return this;
-    }
-
-    public long getTotalMemory() {
-      return totalMemory;
-    }
-
-    public MachineInfo setTotalMemory(long totalMemory) {
-      this.totalMemory = totalMemory;
-      return this;
-    }
-
-    public long getFreeMemory() {
-      return freeMemory;
-    }
-
-    public MachineInfo setFreeMemory(long freeMemory) {
-      this.freeMemory = freeMemory;
-      return this;
-    }
-
-    public double getCpuRate() {
-      return cpuRate;
-    }
-
-    public MachineInfo setCpuRate(double cpuRate) {
-      this.cpuRate = cpuRate;
-      return this;
-    }
-
-    public String getJavaVersion() {
-      return javaVersion;
-    }
-
-    public MachineInfo setJavaVersion(String javaVersion) {
-      this.javaVersion = javaVersion;
-      return this;
-    }
-
-    public String getOsName() {
-      return osName;
-    }
-
-    public MachineInfo setOsName(String osName) {
-      this.osName = osName;
-      return this;
-    }
-
-    public long getJvmTotalMemory() {
-      return jvmTotalMemory;
-    }
-
-    public MachineInfo setJvmTotalMemory(long jvmTotalMemory) {
-      this.jvmTotalMemory = jvmTotalMemory;
-      return this;
-    }
-
-    public long getJvmFreeMemory() {
-      return jvmFreeMemory;
-    }
-
-    public MachineInfo setJvmFreeMemory(long jvmFreeMemory) {
-      this.jvmFreeMemory = jvmFreeMemory;
-      return this;
-    }
-
-    public double getProcessCpuRate() {
-      return processCpuRate;
-    }
-
-    public MachineInfo setProcessCpuRate(double processCpuRate) {
-      this.processCpuRate = processCpuRate;
-      return this;
-    }
-
-    public List<MemoryDescInfo> getMemoryDescInfoList() {
-      return new ArrayList<>(memoryDescInfoList);
-    }
-
-    public MachineInfo setMemoryDescInfoList(
-        List<MemoryDescInfo> memoryDescInfoList) {
-      this.memoryDescInfoList = new ArrayList<>(memoryDescInfoList);
-      return this;
-    }
-
-    public int getDeadLockThreadCount() {
-      return deadLockThreadCount;
-    }
-
-    public MachineInfo setDeadLockThreadCount(int deadLockThreadCount) {
-      this.deadLockThreadCount = deadLockThreadCount;
-      return this;
-    }
-
-    public List<DeadLockThreadInfo> getDeadLockThreadInfoList() {
-      return new ArrayList<>(deadLockThreadInfoList);
-    }
-
-    public MachineInfo setDeadLockThreadInfoList(List<DeadLockThreadInfo> deadLockThreadInfoList) {
-      this.deadLockThreadInfoList = new ArrayList<>(deadLockThreadInfoList);
-      return this;
-    }
-
+    @Setter
+    @Getter
     public static class MemoryDescInfo {
 
       private String name;
@@ -378,53 +192,10 @@ public class NodeInfo {
       private long useSize;
       private long maxSize;
       private double useRate;
-
-      public String getName() {
-        return name;
-      }
-
-      public MemoryDescInfo setName(String name) {
-        this.name = name;
-        return this;
-      }
-
-      public long getInitSize() {
-        return initSize;
-      }
-
-      public MemoryDescInfo setInitSize(long initSize) {
-        this.initSize = initSize;
-        return this;
-      }
-
-      public long getUseSize() {
-        return useSize;
-      }
-
-      public MemoryDescInfo setUseSize(long useSize) {
-        this.useSize = useSize;
-        return this;
-      }
-
-      public long getMaxSize() {
-        return maxSize;
-      }
-
-      public MemoryDescInfo setMaxSize(long maxSize) {
-        this.maxSize = maxSize;
-        return this;
-      }
-
-      public double getUseRate() {
-        return useRate;
-      }
-
-      public MemoryDescInfo setUseRate(double useRate) {
-        this.useRate = useRate;
-        return this;
-      }
     }
 
+    @Setter
+    @Getter
     public static class DeadLockThreadInfo {
 
       private String name;
@@ -434,72 +205,11 @@ public class NodeInfo {
       private long blockTime;
       private long waitTime;
       private String stackTrace;
-
-      public String getName() {
-        return name;
-      }
-
-      public DeadLockThreadInfo setName(String name) {
-        this.name = name;
-        return this;
-      }
-
-      public String getLockName() {
-        return lockName;
-      }
-
-      public DeadLockThreadInfo setLockName(String lockName) {
-        this.lockName = lockName;
-        return this;
-      }
-
-      public String getLockOwner() {
-        return lockOwner;
-      }
-
-      public DeadLockThreadInfo setLockOwner(String lockOwner) {
-        this.lockOwner = lockOwner;
-        return this;
-      }
-
-      public String getState() {
-        return state;
-      }
-
-      public DeadLockThreadInfo setState(String state) {
-        this.state = state;
-        return this;
-      }
-
-      public long getBlockTime() {
-        return blockTime;
-      }
-
-      public DeadLockThreadInfo setBlockTime(long blockTime) {
-        this.blockTime = blockTime;
-        return this;
-      }
-
-      public long getWaitTime() {
-        return waitTime;
-      }
-
-      public DeadLockThreadInfo setWaitTime(long waitTime) {
-        this.waitTime = waitTime;
-        return this;
-      }
-
-      public String getStackTrace() {
-        return stackTrace;
-      }
-
-      public DeadLockThreadInfo setStackTrace(String stackTrace) {
-        this.stackTrace = stackTrace;
-        return this;
-      }
     }
   }
 
+  @Setter
+  @Getter
   public static class ConfigNodeInfo {
 
     /*node information*/
@@ -523,185 +233,5 @@ public class NodeInfo {
     private double maxTimeRatio;
     private long allowCreationOfContracts;
     private long allowAdaptiveEnergy;
-
-    public String getCodeVersion() {
-      return codeVersion;
-    }
-
-    public ConfigNodeInfo setCodeVersion(String codeVersion) {
-      this.codeVersion = codeVersion;
-      return this;
-    }
-
-    public String getVersionNum() {
-      return versionNum;
-    }
-
-    public void setVersionNum(String versionNum) {
-      this.versionNum = versionNum;
-    }
-
-    public String getP2pVersion() {
-      return p2pVersion;
-    }
-
-    public ConfigNodeInfo setP2pVersion(String p2pVersion) {
-      this.p2pVersion = p2pVersion;
-      return this;
-    }
-
-    public int getListenPort() {
-      return listenPort;
-    }
-
-    public ConfigNodeInfo setListenPort(int listenPort) {
-      this.listenPort = listenPort;
-      return this;
-    }
-
-    public boolean isDiscoverEnable() {
-      return discoverEnable;
-    }
-
-    public ConfigNodeInfo setDiscoverEnable(boolean discoverEnable) {
-      this.discoverEnable = discoverEnable;
-      return this;
-    }
-
-    public int getActiveNodeSize() {
-      return activeNodeSize;
-    }
-
-    public ConfigNodeInfo setActiveNodeSize(int activeNodeSize) {
-      this.activeNodeSize = activeNodeSize;
-      return this;
-    }
-
-    public int getPassiveNodeSize() {
-      return passiveNodeSize;
-    }
-
-    public ConfigNodeInfo setPassiveNodeSize(int passiveNodeSize) {
-      this.passiveNodeSize = passiveNodeSize;
-      return this;
-    }
-
-    public int getSendNodeSize() {
-      return sendNodeSize;
-    }
-
-    public ConfigNodeInfo setSendNodeSize(int sendNodeSize) {
-      this.sendNodeSize = sendNodeSize;
-      return this;
-    }
-
-    public int getMaxConnectCount() {
-      return maxConnectCount;
-    }
-
-    public ConfigNodeInfo setMaxConnectCount(int maxConnectCount) {
-      this.maxConnectCount = maxConnectCount;
-      return this;
-    }
-
-    public int getSameIpMaxConnectCount() {
-      return sameIpMaxConnectCount;
-    }
-
-    public ConfigNodeInfo setSameIpMaxConnectCount(int sameIpMaxConnectCount) {
-      this.sameIpMaxConnectCount = sameIpMaxConnectCount;
-      return this;
-    }
-
-    public int getBackupListenPort() {
-      return backupListenPort;
-    }
-
-    public ConfigNodeInfo setBackupListenPort(int backupListenPort) {
-      this.backupListenPort = backupListenPort;
-      return this;
-    }
-
-    public int getBackupMemberSize() {
-      return backupMemberSize;
-    }
-
-    public ConfigNodeInfo setBackupMemberSize(int backupMemberSize) {
-      this.backupMemberSize = backupMemberSize;
-      return this;
-    }
-
-    public int getBackupPriority() {
-      return backupPriority;
-    }
-
-    public ConfigNodeInfo setBackupPriority(int backupPriority) {
-      this.backupPriority = backupPriority;
-      return this;
-    }
-
-    public int getDbVersion() {
-      return dbVersion;
-    }
-
-    public ConfigNodeInfo setDbVersion(int dbVersion) {
-      this.dbVersion = dbVersion;
-      return this;
-    }
-
-    public int getMinParticipationRate() {
-      return minParticipationRate;
-    }
-
-    public ConfigNodeInfo setMinParticipationRate(int minParticipationRate) {
-      this.minParticipationRate = minParticipationRate;
-      return this;
-    }
-
-    public boolean isSupportConstant() {
-      return supportConstant;
-    }
-
-    public ConfigNodeInfo setSupportConstant(boolean supportConstant) {
-      this.supportConstant = supportConstant;
-      return this;
-    }
-
-    public double getMinTimeRatio() {
-      return minTimeRatio;
-    }
-
-    public ConfigNodeInfo setMinTimeRatio(double minTimeRatio) {
-      this.minTimeRatio = minTimeRatio;
-      return this;
-    }
-
-    public double getMaxTimeRatio() {
-      return maxTimeRatio;
-    }
-
-    public ConfigNodeInfo setMaxTimeRatio(double maxTimeRatio) {
-      this.maxTimeRatio = maxTimeRatio;
-      return this;
-    }
-
-    public long getAllowCreationOfContracts() {
-      return allowCreationOfContracts;
-    }
-
-    public ConfigNodeInfo setAllowCreationOfContracts(long allowCreationOfContracts) {
-      this.allowCreationOfContracts = allowCreationOfContracts;
-      return this;
-    }
-
-    public long getAllowAdaptiveEnergy() {
-      return allowAdaptiveEnergy;
-    }
-
-    public ConfigNodeInfo setAllowAdaptiveEnergy(long allowAdaptiveEnergy) {
-      this.allowAdaptiveEnergy = allowAdaptiveEnergy;
-      return this;
-    }
-
   }
 }

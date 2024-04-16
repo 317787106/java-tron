@@ -13,6 +13,7 @@ import com.beust.jcommander.ParameterDescription;
 import com.google.common.base.Strings;
 import com.typesafe.config.Config;
 import com.typesafe.config.ConfigObject;
+import com.typesafe.config.ConfigValue;
 import io.grpc.internal.GrpcUtil;
 import io.grpc.netty.NettyServerBuilder;
 import java.io.File;
@@ -32,6 +33,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Properties;
+import java.util.Set;
+import java.util.TreeMap;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
@@ -232,6 +235,7 @@ public class Args extends CommonParameter {
     PARAMETER.unsolidifiedBlockCheck = false;
     PARAMETER.maxUnsolidifiedBlocks = 54;
     PARAMETER.allowOldRewardOpt = 0;
+    PARAMETER.originConfig = new HashMap<>();
   }
 
   /**
@@ -349,6 +353,22 @@ public class Args extends CommonParameter {
     return optionGroupMap;
   }
 
+  public static Map<String, Object> getOriginConfig(Config config) {
+    Set<String> prefixSet = new HashSet<>(
+        Arrays.asList("net", "vm", "genesis", "block", "node", "seed",
+            "committee", "storage", "trx", "enery", "event", "rate", "crypto", "actuator", "rate"));
+    Set<String> excludeSet = new HashSet<>(Arrays.asList("node.dns.accessKeyId",
+        "node.dns.accessKeySecret", "node.dns.awsHostZoneId", "node.dns.dnsPrivate"));
+    Map<String, Object> treeMap = new TreeMap<>();
+    for (Map.Entry<String, ConfigValue> entry : config.resolve().entrySet()) {
+      String key = entry.getKey();
+      if (prefixSet.contains(key.split("\\.")[0]) && !excludeSet.contains(key)) {
+        treeMap.put(key, entry.getValue().unwrapped().toString());
+      }
+    }
+    return treeMap;
+  }
+
   /**
    * set parameters.
    */
@@ -360,6 +380,7 @@ public class Args extends CommonParameter {
     }
 
     Config config = Configuration.getByFileName(PARAMETER.shellConfFileName, confFileName);
+    PARAMETER.originConfig = getOriginConfig(config);
 
     if (config.hasPath(Constant.NET_TYPE)
         && Constant.TESTNET.equalsIgnoreCase(config.getString(Constant.NET_TYPE))) {
