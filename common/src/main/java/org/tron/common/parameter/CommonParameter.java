@@ -5,9 +5,7 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
-import lombok.Data;
 import lombok.Getter;
 import lombok.Setter;
 import org.quartz.CronExpression;
@@ -667,10 +665,6 @@ public class CommonParameter {
   @Getter
   @Setter
   public long allowOldRewardOpt;
-
-  @Getter
-  @Setter
-  public Map<String,Object> originConfig;
 
   private static double calcMaxTimeRatio() {
     //return max(2.0, min(5.0, 5 * 4.0 / max(Runtime.getRuntime().availableProcessors(), 1)));
