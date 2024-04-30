@@ -1,5 +1,8 @@
 package org.tron.core.services;
 
+import com.alibaba.fastjson.JSONObject;
+import com.alibaba.fastjson.parser.Feature;
+import com.alibaba.fastjson.serializer.SerializerFeature;
 import com.sun.management.OperatingSystemMXBean;
 import java.lang.management.ManagementFactory;
 import java.lang.management.MemoryMXBean;
@@ -9,9 +12,11 @@ import java.lang.management.ThreadInfo;
 import java.lang.management.ThreadMXBean;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map.Entry;
 
+import java.util.Set;
 import org.apache.commons.codec.binary.Hex;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.ArrayUtils;
@@ -65,7 +70,7 @@ public class NodeInfoService {
     setConfigNodeInfo(nodeInfo);
     setBlockInfo(nodeInfo);
     setCheatWitnessInfo(nodeInfo);
-    setOriginConfig(nodeInfo);
+    setRuntimeConfig(nodeInfo);
     return nodeInfo;
   }
 
@@ -208,8 +213,14 @@ public class NodeInfoService {
     }
   }
 
-  protected void setOriginConfig(NodeInfo nodeInfo) {
-    nodeInfo.setOriginConfig(parameter.originConfig);
+  protected void setRuntimeConfig(NodeInfo nodeInfo) {
+    String aa = JSONObject.toJSONString(parameter);
+    JSONObject jsonObject = JSONObject.parseObject(aa, Feature.OrderedField);
+    Set<String> excludeKeys = new HashSet<>(Arrays.asList("privateKey", "password"));
+    for (String key : excludeKeys) {
+      jsonObject.remove(key);
+    }
+    nodeInfo.setRuntimeConfig(jsonObject);
   }
 
 }

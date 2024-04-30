@@ -15,6 +15,9 @@
 
 package org.tron.core.config.args;
 
+import com.alibaba.fastjson.JSONObject;
+import com.alibaba.fastjson.parser.Feature;
+import com.alibaba.fastjson.serializer.SerializerFeature;
 import com.google.common.collect.Lists;
 import com.typesafe.config.Config;
 import io.grpc.internal.GrpcUtil;
@@ -148,6 +151,15 @@ public class ArgsTest {
   public void testOldRewardOpt() {
     thrown.expect(IllegalArgumentException.class);
     Args.setParam(new String[] {"-w"}, "args-test.conf");
+  }
+
+  @Test
+  public void testSerialize() {
+    Args.setParam(new String[] {"-w"}, Constant.TEST_CONF);
+    CommonParameter parameter = Args.getInstance();
+    String aa = JSONObject.toJSONString(parameter, SerializerFeature.SortField);
+    JSONObject jsonObject = JSONObject.parseObject(aa, Feature.OrderedField);
+    Assert.assertFalse(jsonObject.isEmpty());
   }
 }
 

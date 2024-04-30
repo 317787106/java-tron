@@ -1,5 +1,6 @@
 package org.tron.common.entity;
 
+import com.alibaba.fastjson.JSONObject;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -55,7 +56,7 @@ public class NodeInfo {
 
   @Setter
   @Getter
-  private Map<String, Object> originConfig = new HashMap<>();
+  private JSONObject runtimeConfig ;
 
   public Protocol.NodeInfo transferToProtoEntity() {
     Protocol.NodeInfo.Builder builder = Protocol.NodeInfo.newBuilder();

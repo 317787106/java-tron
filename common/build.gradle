@@ -54,6 +54,7 @@ dependencies {
         exclude group: 'com.google.protobuf', module: 'protobuf-java-util'
     }
     compile project(":protocol")
+    compile 'com.alibaba:fastjson:1.2.83'
 }
 
 jacocoTestReport {

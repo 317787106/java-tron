@@ -235,7 +235,6 @@ public class Args extends CommonParameter {
     PARAMETER.unsolidifiedBlockCheck = false;
     PARAMETER.maxUnsolidifiedBlocks = 54;
     PARAMETER.allowOldRewardOpt = 0;
-    PARAMETER.originConfig = new HashMap<>();
   }
 
   /**
@@ -380,7 +379,6 @@ public class Args extends CommonParameter {
     }
 
     Config config = Configuration.getByFileName(PARAMETER.shellConfFileName, confFileName);
-    PARAMETER.originConfig = getOriginConfig(config);
 
     if (config.hasPath(Constant.NET_TYPE)
         && Constant.TESTNET.equalsIgnoreCase(config.getString(Constant.NET_TYPE))) {
