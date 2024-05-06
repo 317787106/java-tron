@@ -214,7 +214,7 @@ public class NodeInfoService {
   protected void setRuntimeConfig(NodeInfo nodeInfo) {
     String aa = JSONObject.toJSONString(parameter);
     JSONObject jsonObject = JSONObject.parseObject(aa, Feature.OrderedField);
-    Set<String> excludeKeys = new HashSet<>(Arrays.asList("privateKey", "password"));
+    Set<String> excludeKeys = new HashSet<>(Arrays.asList("privateKey", "password", "dnsPublishConfig"));
     for (String key : excludeKeys) {
       jsonObject.remove(key);
     }
