@@ -918,7 +918,7 @@ public class Args extends CommonParameter {
         || config.getBoolean(Constant.EVENT_ALLOW_DROP_IF_FULL);
 
     PARAMETER.maxTriggerQueueSize = config.hasPath(Constant.EVENT_MAX_QUEUE_SIZE)
-        ? config.getInt(Constant.EVENT_MAX_QUEUE_SIZE) : 300_000;
+        ? config.getInt(Constant.EVENT_MAX_QUEUE_SIZE) : Integer.MAX_VALUE;
 
     PARAMETER.eventFilter =
         config.hasPath(Constant.EVENT_SUBSCRIBE_FILTER) ? getEventFilter(config) : null;

@@ -811,7 +811,7 @@ public class Manager {
     }
   }
 
-  void checkTriggerQueue() {
+  private void checkTriggerQueue() {
     if (!Args.getInstance().allowDropEvent) {
       while (triggerCapsuleQueue.size() > maxTriggerQueueSize) {
         logger.error(
