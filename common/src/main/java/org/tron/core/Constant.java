@@ -196,8 +196,6 @@ public class Constant {
 
   public static final String NODE_MAX_TRANSACTION_PENDING_SIZE = "node.maxTransactionPendingSize";
 
-  public static final String NODE_CHECK_TRIGGER_QUEUE_Enable = "node.checkTriggerQueueEnable";
-
   public static final String NODE_PENDING_TRANSACTION_TIMEOUT = "node.pendingTransactionTimeout";
 
   public static final String STORAGE_NEEDTO_UPDATE_ASSET = "storage.needToUpdateAsset";
@@ -273,6 +271,9 @@ public class Constant {
   public static final String NATIVE_QUEUE_BIND_PORT = "event.subscribe.native.bindport";
 
   public static final String NATIVE_QUEUE_SEND_LENGTH = "event.subscribe.native.sendqueuelength";
+
+  public static final String EVENT_ALLOW_DROP_IF_FULL = "event.subscribe.allowDropIfFull";
+  public static final String EVENT_MAX_QUEUE_SIZE = "event.subscribe.maxQueueSize";
 
   public static final String EVENT_SUBSCRIBE_PATH = "event.subscribe.path";
   public static final String EVENT_SUBSCRIBE_SERVER = "event.subscribe.server";

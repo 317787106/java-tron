@@ -447,6 +447,12 @@ public class CommonParameter {
   @Getter
   public SeedNode seedNode;
   @Getter
+  @Setter
+  public boolean allowDropEvent = true;
+  @Getter
+  @Setter
+  public int maxTriggerQueueSize;
+  @Getter
   public EventPluginConfig eventPluginConfig;
   @Getter
   public FilterQuery eventFilter;
@@ -471,9 +477,6 @@ public class CommonParameter {
   @Getter
   @Setter
   public int maxTransactionPendingSize;
-  @Getter
-  @Setter
-  public boolean checkTriggerQueueEnable = false;
   @Getter
   @Setter
   public long pendingTransactionTimeout;

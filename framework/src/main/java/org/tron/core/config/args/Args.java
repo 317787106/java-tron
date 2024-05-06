@@ -232,6 +232,7 @@ public class Args extends CommonParameter {
     PARAMETER.unsolidifiedBlockCheck = true;
     PARAMETER.maxUnsolidifiedBlocks = 1000;
     PARAMETER.allowOldRewardOpt = 0;
+    PARAMETER.allowDropEvent = true;
   }
 
   /**
@@ -846,9 +847,6 @@ public class Args extends CommonParameter {
     PARAMETER.maxTransactionPendingSize = config.hasPath(Constant.NODE_MAX_TRANSACTION_PENDING_SIZE)
         ? config.getInt(Constant.NODE_MAX_TRANSACTION_PENDING_SIZE) : 2000;
 
-    PARAMETER.checkTriggerQueueEnable = config.hasPath(Constant.NODE_CHECK_TRIGGER_QUEUE_Enable)
-        && config.getBoolean(Constant.NODE_CHECK_TRIGGER_QUEUE_Enable);
-
     PARAMETER.pendingTransactionTimeout = config.hasPath(Constant.NODE_PENDING_TRANSACTION_TIMEOUT)
         ? config.getLong(Constant.NODE_PENDING_TRANSACTION_TIMEOUT) : 60_000;
 
@@ -915,6 +913,12 @@ public class Args extends CommonParameter {
     PARAMETER.eventPluginConfig =
         config.hasPath(Constant.EVENT_SUBSCRIBE)
             ? getEventPluginConfig(config) : null;
+
+    PARAMETER.allowDropEvent = !config.hasPath(Constant.EVENT_ALLOW_DROP_IF_FULL)
+        || config.getBoolean(Constant.EVENT_ALLOW_DROP_IF_FULL);
+
+    PARAMETER.maxTriggerQueueSize = config.hasPath(Constant.EVENT_MAX_QUEUE_SIZE)
+        ? config.getInt(Constant.EVENT_MAX_QUEUE_SIZE) : 300_000;
 
     PARAMETER.eventFilter =
         config.hasPath(Constant.EVENT_SUBSCRIBE_FILTER) ? getEventFilter(config) : null;

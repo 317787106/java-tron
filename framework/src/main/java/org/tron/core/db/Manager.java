@@ -236,7 +236,7 @@ public class Manager {
   // the capacity is equal to Integer.MAX_VALUE default
   private BlockingQueue<TransactionCapsule> rePushTransactions;
   private BlockingQueue<TriggerCapsule> triggerCapsuleQueue;
-  private int maxTriggerQueueSize = 300_000;
+  int maxTriggerQueueSize = Args.getInstance().getMaxTriggerQueueSize();
   // log filter
   private boolean isRunFilterProcessThread = true;
   private BlockingQueue<FilterTriggerCapsule> filterCapsuleQueue;
@@ -812,17 +812,16 @@ public class Manager {
   }
 
   void checkTriggerQueue() {
-    if (!Args.getInstance().isCheckTriggerQueueEnable()) {
-      return;
-    }
-    while (triggerCapsuleQueue.size() > maxTriggerQueueSize) {
-      logger.error(
-          "Size of triggerCapsuleQueue is too big {} > {}, please check if event plugin works",
-          triggerCapsuleQueue.size(), maxTriggerQueueSize);
-      try {
-        Thread.sleep(2000);
-      } catch (InterruptedException e) {
-        throw new RuntimeException(e);
+    if (!Args.getInstance().allowDropEvent) {
+      while (triggerCapsuleQueue.size() > maxTriggerQueueSize) {
+        logger.error(
+            "Size of triggerCapsuleQueue is too big {} > {}, please check if event plugin works",
+            triggerCapsuleQueue.size(), maxTriggerQueueSize);
+        try {
+          Thread.sleep(2000);
+        } catch (InterruptedException e) {
+          throw new RuntimeException(e);
+        }
       }
     }
   }
@@ -2060,6 +2059,13 @@ public class Manager {
     }
   }
 
+  private boolean offerTriggerCapsuleQueue(TriggerCapsule triggerCapsule) {
+    if (Args.getInstance().allowDropEvent && triggerCapsuleQueue.size() >= maxTriggerQueueSize) {
+      return false;
+    }
+    return triggerCapsuleQueue.offer(triggerCapsule);
+  }
+
   private void postSolidityTrigger(final long oldSolidNum, final long latestSolidifiedBlockNumber) {
     if (eventPluginLoaded && EventPluginLoader.getInstance().isSolidityLogTriggerEnable()) {
       for (Long i : Args.getSolidityContractLogTriggerMap().keySet()) {
@@ -2079,7 +2085,7 @@ public class Manager {
         SolidityTriggerCapsule solidityTriggerCapsule
             = new SolidityTriggerCapsule(blockCapsule.getNum());//unique key
         solidityTriggerCapsule.setTimeStamp(blockCapsule.getTimeStamp());
-        boolean result = triggerCapsuleQueue.offer(solidityTriggerCapsule);
+        boolean result = offerTriggerCapsuleQueue(solidityTriggerCapsule);
         if (!result) {
           logger.info("Too many trigger, lost solidified trigger, block number: {}.",
               blockCapsule.getNum());
@@ -2220,7 +2226,7 @@ public class Manager {
       for (BlockCapsule capsule : capsuleList) {
         BlockLogTriggerCapsule blockLogTriggerCapsule = new BlockLogTriggerCapsule(capsule);
         blockLogTriggerCapsule.setLatestSolidifiedBlockNumber(solidityBlkNum);
-        if (!triggerCapsuleQueue.offer(blockLogTriggerCapsule)) {
+        if (!offerTriggerCapsuleQueue(blockLogTriggerCapsule)) {
           logger.info("Too many triggers, block trigger lost: {}.", capsule.getBlockId());
         }
       }
@@ -2269,7 +2275,7 @@ public class Manager {
         index, preCumulativeEnergyUsed, cumulativeLogCount, transactionInfo, energyUnitPrice);
     trx.setLatestSolidifiedBlockNumber(getDynamicPropertiesStore()
         .getLatestSolidifiedBlockNum());
-    if (!triggerCapsuleQueue.offer(trx)) {
+    if (!offerTriggerCapsuleQueue(trx)) {
       logger.info("Too many triggers, transaction trigger lost: {}.", trxCap.getTransactionId());
     }
 
@@ -2282,7 +2288,7 @@ public class Manager {
     TransactionLogTriggerCapsule trx = new TransactionLogTriggerCapsule(trxCap, blockCap);
     trx.setLatestSolidifiedBlockNumber(getDynamicPropertiesStore()
         .getLatestSolidifiedBlockNum());
-    if (!triggerCapsuleQueue.offer(trx)) {
+    if (!offerTriggerCapsuleQueue(trx)) {
       logger.info("Too many triggers, transaction trigger lost: {}.", trxCap.getTransactionId());
     }
   }
@@ -2322,7 +2328,7 @@ public class Manager {
             .getLatestSolidifiedBlockNum());
         contractTriggerCapsule.setBlockHash(blockHash);
 
-        if (!triggerCapsuleQueue.offer(contractTriggerCapsule)) {
+        if (!offerTriggerCapsuleQueue(contractTriggerCapsule)) {
           logger.info("Too many triggers, contract log trigger lost: {}.",
               trigger.getTransactionId());
         }
