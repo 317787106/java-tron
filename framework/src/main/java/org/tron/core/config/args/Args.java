@@ -917,7 +917,7 @@ public class Args extends CommonParameter {
     PARAMETER.allowDropEvent = !config.hasPath(Constant.EVENT_ALLOW_DROP_IF_FULL)
         || config.getBoolean(Constant.EVENT_ALLOW_DROP_IF_FULL);
 
-    PARAMETER.maxTriggerQueueSize = config.hasPath(Constant.EVENT_MAX_QUEUE_SIZE)
+    PARAMETER.maxTaskQueueSize = config.hasPath(Constant.EVENT_MAX_QUEUE_SIZE)
         ? config.getInt(Constant.EVENT_MAX_QUEUE_SIZE) : Integer.MAX_VALUE;
 
     PARAMETER.eventFilter =

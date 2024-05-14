@@ -520,6 +520,17 @@ public class EventPluginLoader {
     }
   }
 
+  public int getTaskSize() {
+    if (useNativeQueue) {
+      return 0;
+    }
+    int queueSize = 0;
+    for (IPluginEventListener listener : eventListeners) {
+      queueSize += listener.getTaskSize();
+    }
+    return queueSize;
+  }
+
   private String toJsonString(Object data) {
     String jsonData = "";
 

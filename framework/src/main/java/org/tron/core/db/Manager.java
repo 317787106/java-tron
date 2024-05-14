@@ -236,7 +236,7 @@ public class Manager {
   // the capacity is equal to Integer.MAX_VALUE default
   private BlockingQueue<TransactionCapsule> rePushTransactions;
   private BlockingQueue<TriggerCapsule> triggerCapsuleQueue;
-  int maxTriggerQueueSize = Args.getInstance().getMaxTriggerQueueSize();
+  int maxTaskQueueSize = Args.getInstance().getMaxTaskQueueSize();
   // log filter
   private boolean isRunFilterProcessThread = true;
   private BlockingQueue<FilterTriggerCapsule> filterCapsuleQueue;
@@ -813,15 +813,17 @@ public class Manager {
 
   private void checkTriggerQueue() {
     if (!Args.getInstance().allowDropEvent) {
-      while (triggerCapsuleQueue.size() > maxTriggerQueueSize) {
+      int taskSize = triggerCapsuleQueue.size() + EventPluginLoader.getInstance().getTaskSize();
+      while (taskSize > maxTaskQueueSize) {
         logger.error(
-            "Size of triggerCapsuleQueue is too big {} > {}, please check if event plugin works",
-            triggerCapsuleQueue.size(), maxTriggerQueueSize);
+            "Size of taskQueue is too big {} > {}, please check if event plugin works",
+            taskSize, maxTaskQueueSize);
         try {
           Thread.sleep(2000);
         } catch (InterruptedException e) {
           throw new RuntimeException(e);
         }
+        taskSize = triggerCapsuleQueue.size() + EventPluginLoader.getInstance().getTaskSize();
       }
     }
   }
@@ -2060,7 +2062,8 @@ public class Manager {
   }
 
   private boolean offerTriggerCapsuleQueue(TriggerCapsule triggerCapsule) {
-    if (Args.getInstance().allowDropEvent && triggerCapsuleQueue.size() >= maxTriggerQueueSize) {
+    if (Args.getInstance().allowDropEvent && triggerCapsuleQueue.size()
+        + EventPluginLoader.getInstance().getTaskSize() >= maxTaskQueueSize) {
       return false;
     }
     return triggerCapsuleQueue.offer(triggerCapsule);

@@ -451,7 +451,7 @@ public class CommonParameter {
   public boolean allowDropEvent = true;
   @Getter
   @Setter
-  public int maxTriggerQueueSize;
+  public int maxTaskQueueSize;
   @Getter
   public EventPluginConfig eventPluginConfig;
   @Getter
