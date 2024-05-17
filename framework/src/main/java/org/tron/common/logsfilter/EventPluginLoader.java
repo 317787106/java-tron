@@ -526,7 +526,12 @@ public class EventPluginLoader {
     }
     int queueSize = 0;
     for (IPluginEventListener listener : eventListeners) {
-      queueSize += listener.getTaskSize();
+      try {
+        queueSize += listener.getTaskSize();
+      } catch (AbstractMethodError error) {
+        // if the plugin don't support this api, ignore
+        break;
+      }
     }
     return queueSize;
   }
