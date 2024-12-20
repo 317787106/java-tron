@@ -812,14 +812,14 @@ public class Manager {
           TRANSACTION_MAX_BYTE_SIZE));
     }
     long transactionExpiration = transactionCapsule.getExpiration();
-    long headBlockTime = chainBaseManager.getHeadBlockTimeStamp();
-    if (transactionExpiration <= headBlockTime
-        || transactionExpiration > headBlockTime + Constant.MAXIMUM_TIME_UNTIL_EXPIRATION) {
-      throw new TransactionExpirationException(
-          String.format(
-          "Transaction expiration, transaction expiration time is %d, but headBlockTime is %d",
-              transactionExpiration, headBlockTime));
-    }
+    //long headBlockTime = chainBaseManager.getHeadBlockTimeStamp();
+    //if (transactionExpiration <= headBlockTime
+    //    || transactionExpiration > headBlockTime + Constant.MAXIMUM_TIME_UNTIL_EXPIRATION) {
+    //  throw new TransactionExpirationException(
+    //      String.format(
+    //      "Transaction expiration, transaction expiration time is %d, but headBlockTime is %d",
+    //          transactionExpiration, headBlockTime));
+    //}
   }
 
   void validateDup(TransactionCapsule transactionCapsule) throws DupTransactionException {
@@ -1453,8 +1453,8 @@ public class Manager {
       trxCap.setInBlock(true);
     }
 
-    validateTapos(trxCap);
-    validateCommon(trxCap);
+    //validateTapos(trxCap);
+    //validateCommon(trxCap);
 
     validateDup(trxCap);
 

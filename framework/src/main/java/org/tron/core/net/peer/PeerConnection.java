@@ -152,10 +152,10 @@ public class PeerConnection {
   private Set<BlockId> syncBlockInProcess = new HashSet<>();
   @Setter
   @Getter
-  private volatile boolean needSyncFromPeer = true;
+  private volatile boolean needSyncFromPeer = false;
   @Setter
   @Getter
-  private volatile boolean needSyncFromUs = true;
+  private volatile boolean needSyncFromUs = false;
 
   public void setChannel(Channel channel) {
     this.channel = channel;
