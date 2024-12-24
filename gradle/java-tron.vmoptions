@@ -1,7 +1,18 @@
+-Xdebug
+-Xrunjdwp:transport=dt_socket,server=y,suspend=n,address=50009
 -XX:+UseConcMarkSweepGC
 -XX:+PrintGCDetails
+-XX:+ParallelRefProcEnabled
+-XX:+HeapDumpOnOutOfMemoryError
+-XX:+UseCMSInitiatingOccupancyOnly
+-XX:CMSInitiatingOccupancyFraction=70
 -Xloggc:./gc.log
 -XX:+PrintGCDateStamps
 -XX:+CMSParallelRemarkEnabled
 -XX:ReservedCodeCacheSize=256m
+-XX:MetaspaceSize=256m
+-XX:MaxMetaspaceSize=512m
+-XX:MaxDirectMemorySize=1G
 -XX:+CMSScavengeBeforeRemark
+-XX:NewRatio=2
+-Xms19g -Xmx19g
