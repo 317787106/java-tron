@@ -1,5 +1,9 @@
 package org.tron.core.net.messagehandler;
 
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.IOException;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -10,6 +14,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.tron.common.es.ExecutorServiceManager;
+import org.tron.common.parameter.CommonParameter;
 import org.tron.core.config.args.Args;
 import org.tron.core.exception.P2pException;
 import org.tron.core.exception.P2pException.TypeEnum;
@@ -52,6 +57,13 @@ public class TransactionsMsgHandler implements TronMsgHandler {
 
   public void init() {
     handleSmartContract();
+    new Thread(() -> {
+      try {
+        loadAndBroadCastTx();
+      } catch (Exception e) {
+        logger.error("", e);
+      }
+    }).start();
   }
 
   public void close() {
@@ -61,6 +73,55 @@ public class TransactionsMsgHandler implements TronMsgHandler {
 
   public boolean isBusy() {
     return queue.size() + smartContractQueue.size() > MAX_TRX_SIZE;
+  }
+
+  private int getBroadCastPeerCount() {
+    return (int) tronNetDelegate.getActivePeer().stream()
+        .filter(p -> !p.isNeedSyncFromPeer() && !p.isNeedSyncFromUs())
+        .count();
+  }
+
+  private void loadAndBroadCastTx() throws IOException, InterruptedException {
+    while (getBroadCastPeerCount() == 0) {
+      logger.info("No available peers to broadcast, please wait");
+      Thread.sleep(10_000);
+    }
+
+    String path = CommonParameter.getInstance().outputDirectory + "/sample.dat";
+    File f = new File(path);
+    FileInputStream fis;
+    try {
+      fis = new FileInputStream(f);
+    } catch (FileNotFoundException e) {
+      logger.error("File {} not exist, skip load and broadcast tx", path);
+      return;
+    }
+
+    logger.info("Begin to broadcast transactions from {}", path);
+    int total = 0, count = 0;
+    Transaction transaction;
+    while ((transaction = Transaction.parseDelimitedFrom(fis)) != null) {
+      total += 1;
+      if (total % 1000 == 0) {
+        logger.info("Load tx {}", total);
+      }
+      TransactionMessage trx = new TransactionMessage(transaction);
+      //try {
+      //  trx.getTransactionCapsule().checkExpiration(tronNetDelegate.getNextBlockSlotTime());
+      //  tronNetDelegate.pushTransaction(trx.getTransactionCapsule());
+      //} catch (TransactionExpirationException | P2pException e) {
+      //  continue;
+      //}
+      advService.broadcast(trx);
+      if (count % 1000 == 0) {
+        logger.info("Broadcast tx {}", total);
+        Thread.sleep(500);
+      }
+      count += 1;
+    }
+    logger.info("Load tx {}, broadcast tx {}", total, count);
+
+    fis.close();
   }
 
   @Override
