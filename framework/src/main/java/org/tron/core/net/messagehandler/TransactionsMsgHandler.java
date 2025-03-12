@@ -15,7 +15,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.tron.common.es.ExecutorServiceManager;
 import org.tron.common.parameter.CommonParameter;
+import org.tron.core.ChainBaseManager;
 import org.tron.core.config.args.Args;
+import org.tron.core.exception.BadItemException;
+import org.tron.core.exception.ItemNotFoundException;
 import org.tron.core.exception.P2pException;
 import org.tron.core.exception.P2pException.TypeEnum;
 import org.tron.core.exception.TransactionExpirationException;
@@ -41,6 +44,8 @@ public class TransactionsMsgHandler implements TronMsgHandler {
   private TronNetDelegate tronNetDelegate;
   @Autowired
   private AdvService advService;
+  @Autowired
+  private ChainBaseManager chainBaseManager;
 
   private BlockingQueue<TrxEvent> smartContractQueue = new LinkedBlockingQueue(MAX_TRX_SIZE);
 
@@ -97,23 +102,27 @@ public class TransactionsMsgHandler implements TronMsgHandler {
       return;
     }
 
-    logger.info("Begin to broadcast transactions from {}", path);
-    int total = 0, count = 0;
+    long startNum = tronNetDelegate.getHeadBlockId().getNum();
+    long startTime;
+    try {
+      startTime = chainBaseManager.getBlockByNum(startNum).getTimeStamp();
+    } catch (Exception e) {
+      return;
+    }
+    int stressTps = 2000; //read from file
+
+    logger.info("Begin to broadcast transactions from {}, tps {}", path, stressTps);
+    int total = 0;
+    int count = 0;
     Transaction transaction;
     while ((transaction = Transaction.parseDelimitedFrom(fis)) != null) {
       total += 1;
-      if (total % 1000 == 0) {
+      if (total % stressTps == 0) {
         logger.info("Load tx {}", total);
       }
       TransactionMessage trx = new TransactionMessage(transaction);
-      //try {
-      //  trx.getTransactionCapsule().checkExpiration(tronNetDelegate.getNextBlockSlotTime());
-      //  tronNetDelegate.pushTransaction(trx.getTransactionCapsule());
-      //} catch (TransactionExpirationException | P2pException e) {
-      //  continue;
-      //}
       advService.broadcast(trx);
-      if (count % 1000 == 0) {
+      if (count % stressTps == 0) {
         logger.info("Broadcast tx {}", total);
         Thread.sleep(500);
       }
@@ -122,6 +131,44 @@ public class TransactionsMsgHandler implements TronMsgHandler {
     logger.info("Load tx {}, broadcast tx {}", total, count);
 
     fis.close();
+
+    Thread.sleep(10_000);
+    try {
+      reportStress(startNum, startTime);
+    } catch (Exception e) {
+      logger.error("", e);
+    }
+  }
+
+  private void reportStress(long startNum, long startTime)
+      throws BadItemException, ItemNotFoundException {
+    //get last non-empty block
+    long endNum = chainBaseManager.getDynamicPropertiesStore().getLatestBlockHeaderNumber();
+    while (chainBaseManager.getBlockByNum(endNum).getInstance().getTransactionsCount() == 0
+        && endNum >= startNum) {
+      endNum -= 1;
+    }
+    long endTime = chainBaseManager.getBlockByNum(endNum).getTimeStamp();
+
+    int total = 0;
+    int max = 0;
+    int min = Integer.MAX_VALUE;
+    for (long i = startNum + 1; i <= endNum; i++) {
+      int txSize = chainBaseManager.getBlockByNum(i).getInstance().getTransactionsCount();
+      total += txSize;
+      max = Math.max(max, txSize);
+      min = Math.min(min, txSize);
+    }
+
+    int timeCost = (int) (endTime - startTime) / 1000;
+    int tps = timeCost == 0 ? 0 : total / timeCost;
+    int shouldGenerateBlockCount = (int) (endTime - startTime) / 3;
+    int missBlock = shouldGenerateBlockCount - (int) (endNum - startNum);
+    float missBlockRate = missBlock * 100 / (float) shouldGenerateBlockCount;
+
+    logger.info("Total transactions: {}}, cost time: {}, max block size : {}, min block size : {}, "
+            + "push block average tps: {}/s, MissBlockRate: {}%", total, timeCost, max, min, tps,
+        String.format("%.1f", missBlockRate));
   }
 
   @Override
