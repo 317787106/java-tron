@@ -128,13 +128,13 @@ public class TransactionsMsgHandler implements TronMsgHandler {
 
     Thread.sleep(10_000);
     try {
-      reportStress(txTotal, startNum, startTime);
+      reportStress(txTotal, stressTps, startNum, startTime);
     } catch (Exception e) {
       logger.error("", e);
     }
   }
 
-  private void reportStress(long txTotal, long startNum, long startTime)
+  private void reportStress(long txTotal, int stressTps, long startNum, long startTime)
       throws BadItemException, ItemNotFoundException {
     //get last non-empty block
     long endNum = chainBaseManager.getDynamicPropertiesStore().getLatestBlockHeaderNumber();
@@ -159,9 +159,11 @@ public class TransactionsMsgHandler implements TronMsgHandler {
     int shouldGenerateBlockCount = (int) (endTime - startTime) / 3000;
     int missBlock = shouldGenerateBlockCount - (int) (endNum - startNum);
     float missBlockRate = missBlock * 100 / (float) shouldGenerateBlockCount;
-    logger.info("Total transactions: {}, broadcast size: {}, cost time: {} s, max block size : {}, "
-            + "min block size : {}, push block average tps: {}/s, MissBlockRate: {}%",
-        txTotal, txSuccess, timeCost, max, min, tps, String.format("%.1f", missBlockRate));
+    logger.info("Total transactions of file: {}, stressTps: {}, broadcast size success: {}, "
+            + "cost time: {} s, start num: {}, end num: {}, max block size: {}, min block size: {}, "
+            + "push block average tps: {}/s, MissBlockRate: {}%",
+        txTotal, stressTps, txSuccess, timeCost, startNum, endNum, max, min, tps,
+        String.format("%.1f", missBlockRate));
   }
 
   @Override
