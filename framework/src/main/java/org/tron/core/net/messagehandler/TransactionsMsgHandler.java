@@ -160,8 +160,8 @@ public class TransactionsMsgHandler implements TronMsgHandler {
     int missBlock = shouldGenerateBlockCount - (int) (endNum - startNum);
     float missBlockRate = missBlock * 100 / (float) shouldGenerateBlockCount;
     logger.info("Total transactions of file: {}, stressTps: {}, broadcast size success: {}, "
-            + "cost time: {} s, start num: {}, end num: {}, max block size: {}, min block size: {}, "
-            + "push block average tps: {}/s, MissBlockRate: {}%",
+            + "cost time: {} s, start num: {}, end num: {}, max block size: {}, "
+            + "min block size: {}, push block average tps: {}/s, MissBlockRate: {}%",
         txTotal, stressTps, txSuccess, timeCost, startNum, endNum, max, min, tps,
         String.format("%.1f", missBlockRate));
   }
