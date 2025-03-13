@@ -103,13 +103,6 @@ public class TransactionsMsgHandler implements TronMsgHandler {
     }
 
     long startNum = tronNetDelegate.getHeadBlockId().getNum();
-    long startTime;
-    try {
-      startTime = chainBaseManager.getBlockByNum(startNum).getTimeStamp();
-    } catch (Exception e) {
-      return;
-    }
-
     int stressTps = 2000; //read from file
     logger.info("Begin to broadcast transactions from {}, tps {}", path, stressTps);
     int txTotal = 0;
@@ -128,14 +121,20 @@ public class TransactionsMsgHandler implements TronMsgHandler {
 
     Thread.sleep(10_000);
     try {
-      reportStress(txTotal, stressTps, startNum, startTime);
+      reportStress(txTotal, stressTps, startNum);
     } catch (Exception e) {
       logger.error("", e);
     }
   }
 
-  private void reportStress(long txTotal, int stressTps, long startNum, long startTime)
+  private void reportStress(long txTotal, int stressTps, long startNum)
       throws BadItemException, ItemNotFoundException {
+    //get first not-empty block
+    while (chainBaseManager.getBlockByNum(startNum).getInstance().getTransactionsCount() == 0) {
+      startNum += 1;
+    }
+    long startTime = chainBaseManager.getBlockByNum(startNum).getTimeStamp();
+
     //get last non-empty block
     long endNum = chainBaseManager.getDynamicPropertiesStore().getLatestBlockHeaderNumber();
     while (chainBaseManager.getBlockByNum(endNum).getInstance().getTransactionsCount() == 0
@@ -147,7 +146,7 @@ public class TransactionsMsgHandler implements TronMsgHandler {
     int txSuccess = 0;
     int max = 0;
     int min = Integer.MAX_VALUE;
-    for (long i = startNum + 1; i <= endNum; i++) {
+    for (long i = startNum; i <= endNum; i++) {
       int txSize = chainBaseManager.getBlockByNum(i).getInstance().getTransactionsCount();
       txSuccess += txSize;
       max = Math.max(max, txSize);
