@@ -109,38 +109,32 @@ public class TransactionsMsgHandler implements TronMsgHandler {
     } catch (Exception e) {
       return;
     }
-    int stressTps = 2000; //read from file
 
+    int stressTps = 2000; //read from file
     logger.info("Begin to broadcast transactions from {}, tps {}", path, stressTps);
-    int total = 0;
-    int count = 0;
+    int txTotal = 0;
     Transaction transaction;
     while ((transaction = Transaction.parseDelimitedFrom(fis)) != null) {
-      total += 1;
-      if (total % stressTps == 0) {
-        logger.info("Load tx {}", total);
-      }
       TransactionMessage trx = new TransactionMessage(transaction);
       advService.broadcast(trx);
-      if (count % stressTps == 0) {
-        logger.info("Broadcast tx {}", total);
-        Thread.sleep(500);
+      if (txTotal > 0 && txTotal % 1000 == 0) { //MAX_SPREAD_SIZE
+        logger.info("Broadcast tx {}", txTotal);
+        Thread.sleep(1_000_000 / stressTps);
       }
-      count += 1;
+      txTotal += 1;
     }
-    logger.info("Load tx {}, broadcast tx {}", total, count);
-
     fis.close();
+    logger.info("Load and broadcast {} tx completely", txTotal);
 
     Thread.sleep(10_000);
     try {
-      reportStress(startNum, startTime);
+      reportStress(txTotal, startNum, startTime);
     } catch (Exception e) {
       logger.error("", e);
     }
   }
 
-  private void reportStress(long startNum, long startTime)
+  private void reportStress(long txTotal, long startNum, long startTime)
       throws BadItemException, ItemNotFoundException {
     //get last non-empty block
     long endNum = chainBaseManager.getDynamicPropertiesStore().getLatestBlockHeaderNumber();
@@ -150,25 +144,24 @@ public class TransactionsMsgHandler implements TronMsgHandler {
     }
     long endTime = chainBaseManager.getBlockByNum(endNum).getTimeStamp();
 
-    int total = 0;
+    int txSuccess = 0;
     int max = 0;
     int min = Integer.MAX_VALUE;
     for (long i = startNum + 1; i <= endNum; i++) {
       int txSize = chainBaseManager.getBlockByNum(i).getInstance().getTransactionsCount();
-      total += txSize;
+      txSuccess += txSize;
       max = Math.max(max, txSize);
       min = Math.min(min, txSize);
     }
 
     int timeCost = (int) (endTime - startTime) / 1000;
-    int tps = timeCost == 0 ? 0 : total / timeCost;
-    int shouldGenerateBlockCount = (int) (endTime - startTime) / 3;
+    int tps = timeCost == 0 ? 0 : txSuccess / timeCost;
+    int shouldGenerateBlockCount = (int) (endTime - startTime) / 3000;
     int missBlock = shouldGenerateBlockCount - (int) (endNum - startNum);
     float missBlockRate = missBlock * 100 / (float) shouldGenerateBlockCount;
-
-    logger.info("Total transactions: {}}, cost time: {}, max block size : {}, min block size : {}, "
-            + "push block average tps: {}/s, MissBlockRate: {}%", total, timeCost, max, min, tps,
-        String.format("%.1f", missBlockRate));
+    logger.info("Total transactions: {}, broadcast size: {}, cost time: {} s, max block size : {}, "
+            + "min block size : {}, push block average tps: {}/s, MissBlockRate: {}%",
+        txTotal, txSuccess, timeCost, max, min, tps, String.format("%.1f", missBlockRate));
   }
 
   @Override
