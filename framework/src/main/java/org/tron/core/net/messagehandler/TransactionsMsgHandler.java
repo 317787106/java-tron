@@ -92,19 +92,37 @@ public class TransactionsMsgHandler implements TronMsgHandler {
       Thread.sleep(10_000);
     }
 
-    String path = CommonParameter.getInstance().outputDirectory + "/sample.dat";
-    File f = new File(path);
+    int stressTps = 2000; //read from file name
+    File outputDirectory = new File(CommonParameter.getInstance().outputDirectory);
+    File stressFile = null;
+    for (File file : outputDirectory.listFiles()) {
+      if (!file.isDirectory() && file.getName().startsWith("sample")
+          && file.getName().endsWith(".dat")) {
+        stressFile = file;
+        String[] parts = file.getName().split("\\.")[0].split("_");
+        if (parts.length == 2) {
+          stressTps = Integer.parseInt(parts[1]);
+        } else {
+          logger.info("Stress tps not specified, use 2000");
+        }
+        break;
+      }
+    }
+    if (stressFile == null) {
+      logger.warn("Stress File not exist, it should be like output-directory/sample_<tps>.dat. "
+          + "Skip load and broadcast transactions");
+      return;
+    }
     FileInputStream fis;
     try {
-      fis = new FileInputStream(f);
+      fis = new FileInputStream(stressFile);
     } catch (FileNotFoundException e) {
-      logger.error("File {} not exist, skip load and broadcast tx", path);
       return;
     }
 
+    logger.info("Begin to broadcast transactions from {}, stress tps {}", stressFile.getName(),
+        stressTps);
     long startNum = tronNetDelegate.getHeadBlockId().getNum();
-    int stressTps = 2000; //read from file
-    logger.info("Begin to broadcast transactions from {}, tps {}", path, stressTps);
     int txTotal = 0;
     Transaction transaction;
     while ((transaction = Transaction.parseDelimitedFrom(fis)) != null) {
