@@ -38,6 +38,7 @@ import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Ignore;
 import org.junit.Test;
+import org.springframework.test.annotation.DirtiesContext;
 import org.tron.api.GrpcAPI;
 import org.tron.api.GrpcAPI.AccountNetMessage;
 import org.tron.api.GrpcAPI.AssetIssueList;
@@ -94,6 +95,7 @@ import org.tron.protos.contract.SmartContractOuterClass;
 
 
 @Slf4j
+@DirtiesContext
 public class WalletTest extends BaseTest {
 
   public static final String ACCOUNT_ADDRESS_ONE = "121212a9cf";

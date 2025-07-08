@@ -4,10 +4,13 @@ import static junit.framework.TestCase.fail;
 
 import com.google.protobuf.Any;
 import com.google.protobuf.ByteString;
+import java.io.IOException;
+import java.util.ArrayList;
 import javax.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.Assert;
 import org.junit.Before;
+import org.junit.BeforeClass;
 import org.junit.Test;
 import org.tron.common.BaseTest;
 import org.tron.common.utils.ByteArray;
@@ -34,15 +37,15 @@ import org.tron.protos.contract.WitnessContract.VoteWitnessContract.Vote;
 @Slf4j
 public class VoteWitnessActuatorTest extends BaseTest {
 
-  private static final String ACCOUNT_NAME = "account";
-  private static final String OWNER_ADDRESS;
-  private static final String WITNESS_NAME = "witness";
-  private static final String WITNESS_ADDRESS;
+  private static String ACCOUNT_NAME = "account";
+  private static String OWNER_ADDRESS;
+  private static String WITNESS_NAME = "witness";
+  private static String WITNESS_ADDRESS;
   private static final String URL = "https://tron.network";
-  private static final String ADDRESS_INVALID = "aaaa";
-  private static final String WITNESS_ADDRESS_NOACCOUNT;
-  private static final String OWNER_ADDRESS_NOACCOUNT;
-  private static final String OWNER_ADDRESS_BALANCENOTSUFFICIENT;
+  private static String ADDRESS_INVALID = "aaaa";
+  private static String WITNESS_ADDRESS_NOACCOUNT;
+  private static String OWNER_ADDRESS_NOACCOUNT;
+  private static String OWNER_ADDRESS_BALANCENOTSUFFICIENT;
   @Resource
   private MaintenanceManager maintenanceManager;
   @Resource
@@ -50,9 +53,11 @@ public class VoteWitnessActuatorTest extends BaseTest {
 
   private static boolean consensusStart;
 
-  static {
-    Args.setParam(new String[]{"--output-directory", dbPath()}, Constant.TEST_CONF);
+  @BeforeClass
+  public static void init() throws IOException {
+    Args.setParam(new String[] {"--output-directory", dbPath()}, Constant.TEST_CONF);
     Args.getInstance().setConsensusLogicOptimization(1);
+    Args.getInstance().setUnfreezeDelayDays(0);
     OWNER_ADDRESS = Wallet.getAddressPreFixString() + "abd4b9367799eaa3197fecb144eb71de1e049abc";
     WITNESS_ADDRESS = Wallet.getAddressPreFixString() + "548794500882809695a8a687866e76d4271a1abc";
     WITNESS_ADDRESS_NOACCOUNT =
@@ -91,6 +96,7 @@ public class VoteWitnessActuatorTest extends BaseTest {
     dbManager.getAccountStore()
         .put(ownerAccountFirstCapsule.getAddress().toByteArray(), ownerAccountFirstCapsule);
     dbManager.getWitnessStore().put(ownerCapsule.getAddress().toByteArray(), ownerCapsule);
+    dbManager.getWitnessScheduleStore().saveActiveWitnesses(new ArrayList<>());
 
     if (consensusStart) {
       return;
@@ -562,8 +568,8 @@ public class VoteWitnessActuatorTest extends BaseTest {
 
     AccountCapsule owner =
         dbManager.getAccountStore().get(ByteArray.fromHexString(OWNER_ADDRESS));
-    owner.setFrozenForEnergy(1L,0L);
-    dbManager.getAccountStore().put(ByteArray.fromHexString(OWNER_ADDRESS),owner);
+    owner.setFrozenForEnergy(1L, 0L);
+    dbManager.getAccountStore().put(ByteArray.fromHexString(OWNER_ADDRESS), owner);
 
     VoteWitnessActuator actuator = new VoteWitnessActuator();
     actuator.setChainBaseManager(dbManager.getChainBaseManager())
@@ -585,8 +591,8 @@ public class VoteWitnessActuatorTest extends BaseTest {
 
     AccountCapsule owner =
         dbManager.getAccountStore().get(ByteArray.fromHexString(OWNER_ADDRESS));
-    owner.setFrozenForEnergy(2000000L,0L);
-    dbManager.getAccountStore().put(ByteArray.fromHexString(OWNER_ADDRESS),owner);
+    owner.setFrozenForEnergy(2000000L, 0L);
+    dbManager.getAccountStore().put(ByteArray.fromHexString(OWNER_ADDRESS), owner);
 
     VoteWitnessActuator actuator = new VoteWitnessActuator();
     actuator.setChainBaseManager(dbManager.getChainBaseManager())
@@ -616,9 +622,9 @@ public class VoteWitnessActuatorTest extends BaseTest {
 
     AccountCapsule owner =
         dbManager.getAccountStore().get(ByteArray.fromHexString(OWNER_ADDRESS));
-    owner.setFrozenForEnergy(2000000L,0L);
-    owner.setFrozenForTronPower(1000000L,0L);
-    dbManager.getAccountStore().put(ByteArray.fromHexString(OWNER_ADDRESS),owner);
+    owner.setFrozenForEnergy(2000000L, 0L);
+    owner.setFrozenForTronPower(1000000L, 0L);
+    dbManager.getAccountStore().put(ByteArray.fromHexString(OWNER_ADDRESS), owner);
 
     VoteWitnessActuator actuator = new VoteWitnessActuator();
     actuator.setChainBaseManager(dbManager.getChainBaseManager())
@@ -650,9 +656,9 @@ public class VoteWitnessActuatorTest extends BaseTest {
 
     AccountCapsule owner =
         dbManager.getAccountStore().get(ByteArray.fromHexString(OWNER_ADDRESS));
-    owner.setFrozenForEnergy(2000000L,0L);
-    owner.setFrozenForTronPower(1000000L,0L);
-    dbManager.getAccountStore().put(ByteArray.fromHexString(OWNER_ADDRESS),owner);
+    owner.setFrozenForEnergy(2000000L, 0L);
+    owner.setFrozenForTronPower(1000000L, 0L);
+    dbManager.getAccountStore().put(ByteArray.fromHexString(OWNER_ADDRESS), owner);
 
     VoteWitnessActuator actuator = new VoteWitnessActuator();
     actuator.setChainBaseManager(dbManager.getChainBaseManager())

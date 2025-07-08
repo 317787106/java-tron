@@ -10,6 +10,7 @@ import org.junit.Before;
 import org.junit.ClassRule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
+import org.springframework.test.annotation.DirtiesContext;
 import org.tron.api.GrpcAPI;
 import org.tron.api.GrpcAPI.Return.response_code;
 import org.tron.api.GrpcAPI.TransactionApprovedList;
@@ -32,6 +33,7 @@ import org.tron.protos.Protocol.Transaction.Contract.ContractType;
 import org.tron.protos.contract.BalanceContract.TransferContract;
 
 @Slf4j
+@DirtiesContext
 public class TransactionExpireTest {
 
   @ClassRule

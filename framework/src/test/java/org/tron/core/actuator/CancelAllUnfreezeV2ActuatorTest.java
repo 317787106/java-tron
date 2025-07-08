@@ -13,6 +13,7 @@ import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.Before;
 import org.junit.Test;
+import org.springframework.test.annotation.DirtiesContext;
 import org.tron.common.BaseTest;
 import org.tron.common.utils.ByteArray;
 import org.tron.core.Constant;
@@ -26,6 +27,7 @@ import org.tron.protos.Protocol;
 import org.tron.protos.contract.BalanceContract;
 
 @Slf4j
+@DirtiesContext
 public class CancelAllUnfreezeV2ActuatorTest extends BaseTest {
 
   private static final String OWNER_ADDRESS;

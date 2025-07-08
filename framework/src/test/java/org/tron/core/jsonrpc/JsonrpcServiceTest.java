@@ -22,6 +22,7 @@ import org.bouncycastle.util.encoders.Hex;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
+import org.springframework.test.annotation.DirtiesContext;
 import org.tron.common.BaseTest;
 import org.tron.common.parameter.CommonParameter;
 import org.tron.common.prometheus.Metrics;
@@ -51,6 +52,7 @@ import org.tron.protos.contract.BalanceContract.TransferContract;
 
 
 @Slf4j
+@DirtiesContext
 public class JsonrpcServiceTest extends BaseTest {
 
   private static final String OWNER_ADDRESS;

@@ -7,6 +7,7 @@ import java.util.Objects;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
+import org.springframework.test.annotation.DirtiesContext;
 import org.tron.common.BaseTest;
 import org.tron.common.utils.ByteArray;
 import org.tron.common.utils.Sha256Hash;
@@ -21,6 +22,7 @@ import org.tron.protos.Protocol.Exchange;
 import org.tron.protos.Protocol.Transaction.Contract.ContractType;
 import org.tron.protos.contract.AssetIssueContractOuterClass.AssetIssueContract;
 
+@DirtiesContext
 public class AssetUpdateHelperTest extends BaseTest {
 
   private static final ByteString assetName = ByteString.copyFrom("assetIssueName".getBytes());

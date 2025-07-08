@@ -21,6 +21,7 @@ import org.junit.Before;
 import org.junit.ClassRule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
+import org.springframework.test.annotation.DirtiesContext;
 import org.tron.common.application.TronApplicationContext;
 import org.tron.core.ChainBaseManager;
 import org.tron.core.Constant;
@@ -33,6 +34,7 @@ import org.tron.protos.Protocol.Proposal.State;
 
 
 @Slf4j
+@DirtiesContext
 public class BandwidthPriceHistoryLoaderTest {
 
   private static ChainBaseManager chainBaseManager;

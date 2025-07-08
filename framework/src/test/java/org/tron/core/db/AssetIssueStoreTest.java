@@ -5,6 +5,7 @@ import javax.annotation.Resource;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
+import org.springframework.test.annotation.DirtiesContext;
 import org.tron.common.BaseTest;
 import org.tron.common.utils.ByteArray;
 import org.tron.core.Constant;
@@ -13,6 +14,7 @@ import org.tron.core.config.args.Args;
 import org.tron.core.store.AssetIssueStore;
 import org.tron.protos.contract.AssetIssueContractOuterClass;
 
+@DirtiesContext
 public class AssetIssueStoreTest extends BaseTest {
 
   private static final String NAME = "test-asset";

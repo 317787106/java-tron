@@ -10,6 +10,7 @@ import org.joda.time.DateTime;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
+import org.springframework.test.annotation.DirtiesContext;
 import org.tron.common.BaseTest;
 import org.tron.common.runtime.RuntimeImpl;
 import org.tron.common.utils.ByteArray;
@@ -37,6 +38,7 @@ import org.tron.protos.contract.AssetIssueContractOuterClass.TransferAssetContra
 import org.tron.protos.contract.BalanceContract.TransferContract;
 
 @Slf4j
+@DirtiesContext
 public class BandwidthProcessorTest extends BaseTest {
 
   private static final String ASSET_NAME;

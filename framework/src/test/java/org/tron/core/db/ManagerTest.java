@@ -33,6 +33,7 @@ import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
+import org.springframework.test.annotation.DirtiesContext;
 import org.tron.common.application.TronApplicationContext;
 import org.tron.common.crypto.ECKey;
 import org.tron.common.runtime.RuntimeImpl;
@@ -103,6 +104,7 @@ import org.tron.protos.contract.ShieldContract;
 
 
 @Slf4j
+@DirtiesContext
 public class ManagerTest extends BlockGenerate {
 
   private static final int SHIELDED_TRANS_IN_BLOCK_COUNTS = 1;

@@ -31,7 +31,7 @@ import org.tron.protos.Protocol;
 @Slf4j
 @RunWith(SpringJUnit4ClassRunner.class)
 @ContextConfiguration(classes = {DefaultConfig.class})
-@DirtiesContext
+//@DirtiesContext
 public abstract class BaseTest {
 
   @ClassRule
@@ -55,7 +55,9 @@ public abstract class BaseTest {
 
   public static String dbPath() {
     try {
-      return temporaryFolder.newFolder().toString();
+      String path = temporaryFolder.newFolder().toString();
+      logger.info("path: " + path);
+      return path;
     } catch (IOException e) {
       Assert.fail("create temp folder failed");
     }

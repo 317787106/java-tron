@@ -7,6 +7,7 @@ import java.util.Random;
 import org.junit.Assert;
 import org.junit.BeforeClass;
 import org.junit.Test;
+import org.springframework.test.annotation.DirtiesContext;
 import org.tron.common.BaseTest;
 import org.tron.common.utils.ByteArray;
 import org.tron.core.Constant;
@@ -18,6 +19,7 @@ import org.tron.protos.Protocol.Permission;
 import org.tron.protos.Protocol.Vote;
 import org.tron.protos.contract.AssetIssueContractOuterClass.AssetIssueContract;
 
+@DirtiesContext
 public class AccountCapsuleTest extends BaseTest {
 
   private static final String OWNER_ADDRESS;

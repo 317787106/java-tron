@@ -9,6 +9,7 @@ import javax.annotation.Resource;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
+import org.springframework.test.annotation.DirtiesContext;
 import org.tron.common.BaseTest;
 import org.tron.common.utils.ByteArray;
 import org.tron.core.Constant;
@@ -21,6 +22,7 @@ import org.tron.core.store.AccountStore;
 import org.tron.protos.Protocol;
 import org.tron.protos.contract.AssetIssueContractOuterClass;
 
+@DirtiesContext
 public class AccountAssetStoreTest extends BaseTest {
 
   private static final byte[] ASSET_KEY = "20000".getBytes();
