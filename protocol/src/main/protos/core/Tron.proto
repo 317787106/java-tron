@@ -240,6 +240,45 @@ message Account {
   int64 acquired_delegated_frozenV2_balance_for_bandwidth = 37;
 }
 
+message AccountDiff {
+  // Primitive fields
+  map<int32, Int64Value> int64_fields = 1;
+  map<int32, BytesValue> bytes_fields = 2;
+  map<int32, BoolValue>  bool_fields  = 3;
+  map<int32, AccountType> enum_fields = 4;
+
+  // Singular message fields
+  map<int32, Account.AccountResource> account_resource_fields = 5;
+  map<int32, Account.Frozen> frozen_message_fields = 6;
+  map<int32, Permission> permission_fields = 7;
+
+  // --- Repeated fields: wrap list in a message ---
+  map<int32, FrozenList>        repeated_frozen = 10;           // fields 7, 16
+  map<int32, FreezeV2List>      repeated_frozenV2 = 11;         // field 34
+  map<int32, UnFreezeV2List>    repeated_unfrozenV2 = 12;       // field 35
+  map<int32, VoteList>          repeated_votes = 13;            // field 5
+  map<int32, PermissionList>    repeated_active_permission = 14; // field 33
+
+  // Map fields
+  map<int32, MapStringInt64> map_string_int64 = 20;
+}
+
+// --- Wrapper messages for repeated fields ---
+message FrozenList        { repeated Account.Frozen        values = 1; }
+message FreezeV2List      { repeated Account.FreezeV2      values = 1; }
+message UnFreezeV2List    { repeated Account.UnFreezeV2    values = 1; }
+message VoteList          { repeated Vote                  values = 1; }
+message PermissionList    { repeated Permission            values = 1; }
+
+// Primitive wrappers. distinguish unset value with value 0
+message Int64Value { int64 value = 1; }
+message BytesValue { bytes value = 1; }
+message BoolValue  { bool  value = 1; }
+
+message MapStringInt64 {
+  map<string, int64> entries = 1;
+}
+
 message Key {
   bytes address = 1;
   int64 weight = 2;

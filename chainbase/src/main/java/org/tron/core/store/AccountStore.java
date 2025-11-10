@@ -2,17 +2,20 @@ package org.tron.core.store;
 
 import com.google.protobuf.ByteString;
 import com.typesafe.config.ConfigObject;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.ArrayUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.tron.common.parameter.CommonParameter;
+import org.tron.common.utils.AccountDiffUtil;
 import org.tron.common.utils.Commons;
 import org.tron.core.capsule.AccountCapsule;
 import org.tron.core.capsule.BlockCapsule;
 import org.tron.core.db.TronStoreWithRevoking;
 import org.tron.core.db.accountstate.AccountStateCallBackUtils;
 import org.tron.core.exception.TronError;
+import org.tron.protos.Protocol.AccountDiff;
 import org.tron.protos.contract.BalanceContract.TransactionBalanceTrace;
 import org.tron.protos.contract.BalanceContract.TransactionBalanceTrace.Operation;
 
@@ -21,6 +24,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.OptionalLong;
 
+@Slf4j
 @Component
 public class AccountStore extends TronStoreWithRevoking<AccountCapsule> {
 
@@ -83,6 +87,13 @@ public class AccountStore extends TronStoreWithRevoking<AccountCapsule> {
           accountTraceStore.recordBalanceWithBlock(key, blockId.getNum(), item.getBalance());
         }
       }
+    }
+    AccountCapsule oldAccountCapsule = super.getUnchecked(key);
+    if (oldAccountCapsule != null) {
+      AccountDiff accountDiff = AccountDiffUtil.computeDiff(oldAccountCapsule.getInstance(),
+          item.getInstance());
+      logger.info("All account size: {}, diff size: {}", item.getData().length,
+          accountDiff.toByteArray().length);
     }
     super.put(key, item);
     accountStateCallBackUtils.accountCallBack(key, item);
