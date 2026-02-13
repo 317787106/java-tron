@@ -21,7 +21,7 @@ import org.tron.common.utils.ByteArray;
 public class Erc8128HttpSigExample {
 
   private static final String PRIVATE_KEY =
-      "bc48b94db7a8ba3f9025eeff7c9fc09f57fbcf46cf422ea33d64492f292d2215";
+      "private_key_of_ADDRESS";
   //nile address
   private static final String ADDRESS = "TEPRbQxXQEpHpeEx8tK5xHVs7NWudAAZgu";
   //nile chainId from eth_chainId
