@@ -34,11 +34,10 @@ public class Erc8128HttpSigExample {
 
   public static void main(String[] args) throws NoSuchAlgorithmException, IOException {
 
-    // post uses json
-    // get uses "?key1=k1&value1=v1", carry with ? prefix
+    // POST uses json
     String jsonBody = String.format("{\"address\":\"%s\",\"visible\":true}", ADDRESS);
 
-    // get the sha256 of jsonBody
+    // get the sha256 of jsonBody, only used in POST
     MessageDigest digest = MessageDigest.getInstance("SHA-256");
     byte[] bodyHash = digest.digest(jsonBody.getBytes(StandardCharsets.UTF_8));
     String contentDigest = Base64.getEncoder().encodeToString(bodyHash);
@@ -51,20 +50,26 @@ public class Erc8128HttpSigExample {
     System.arraycopy(decodeFromBase58Check(ADDRESS), 1, addressHex, 0, 20);
     String keyId = "tip8128:" + CHAINID + ":" + ByteArray.toHexString(addressHex);
 
+    //only used in GET
+    //String queryOfGet = "?" + "address=" + ADDRESS + "&visible=true";
+
     // construct signingString, with the order of tip-8128.
-    // only add @query to signingString if method GET, don't add it in POST
-    String signingString = "\"@method\": POST\n" +
+    // @query only belongs to method GET, don't add it in POST.
+    // content-digest only belongs to method POST. if length=0,ignore
+    String signingString = "\"@method\": POST\n" + //must use uppercase and line
         "\"@authority\": " + authority + "\n" +
         "\"@path\": " + PATH + "\n" +
-        //"\"@query\": " + jsonBody + "\n" +
-        "\"content-digest\": sha-256=:" + contentDigest + ":\n" +
+        //"\"@query\": " + queryOfGet + "\n" + //only used in GET
+        "\"content-digest\": sha-256=:" + contentDigest + ":\n" + //only used in POST
+        //add "@query" if GET
         "\"@signature-params\": (\"@method\" \"@authority\" \"@path\" \"content-digest\")" +
         ";created=" + createTimestamp +
         ";expires=" + expireTimestamp +
         ";keyid=\"" + keyId + "\"" +
         ";alg=\"eth_personalSign\"";
 
-    signingString = "\u0019TRON Signed Message:\n" + signingString.length() + signingString;
+    byte[] singedBytes = signingString.getBytes(StandardCharsets.UTF_8);
+    signingString = "\u0019TRON Signed Message:\n" + singedBytes.length + signingString;
     System.out.println(signingString);
 
     // sign the messageHash of signingString with PRIVATE_KEY
@@ -73,7 +78,7 @@ public class Erc8128HttpSigExample {
     ECDSASignature signature = ecKey.sign(messageHash);
     ByteString sign = ByteString.copyFrom(signature.toByteArray());
 
-    // 基于 Base64
+    // use Base64
     String sigB64 = Base64.getEncoder().encodeToString(sign.toByteArray());
 
     // build Signature-Input & Signature for request HEADER。@ represetns placeholder
@@ -91,8 +96,9 @@ public class Erc8128HttpSigExample {
 
     conn.addRequestProperty("Signature-Input", signatureInput);
     conn.addRequestProperty("Signature", signatureHeader);
-    conn.addRequestProperty("Content-Digest", "sha-256=" + contentDigest);
-    conn.addRequestProperty("Signature-Date", String.valueOf(createTimestamp));
+    //When client POST, Content-Digest is append to http header
+    //Server use request.getInputStream.readAllBytes(), so ignore the order of key
+    conn.addRequestProperty("Content-Digest", "sha-256=:" + contentDigest + ":");
     conn.setDoOutput(true);
     conn.setDoInput(true);
     conn.setInstanceFollowRedirects(true);
