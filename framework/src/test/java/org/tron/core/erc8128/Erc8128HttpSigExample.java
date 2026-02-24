@@ -13,7 +13,6 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Base64;
 import org.tron.common.crypto.ECKey;
-import org.tron.common.crypto.Hash;
 import org.tron.common.utils.ByteArray;
 import org.tron.keystore.Wallet;
 
@@ -27,7 +26,7 @@ public class Erc8128HttpSigExample {
   private static final long CHAINID = ByteArray.toLong(ByteArray.fromHexString("0xcd8690dc"));
 
   // specify authority, without http:// or https://
-  private static final String authority = "localhost:8090"; //only use for test
+  private static final String authority = "api.trongrid.io"; //only use for test
   //private static final String authority = "api.trongrid.io"; //use for production
   private static final String PATH = "/wallet/getaccount";
   private static final String ERCLABEL = "tron";
@@ -83,7 +82,7 @@ public class Erc8128HttpSigExample {
     System.out.println(signingString);
 
     // sign the messageHash of signingString with PRIVATE_KEY
-    byte[] messageHash = Hash.sha3(signingString.getBytes(StandardCharsets.UTF_8));
+    byte[] messageHash = digest.digest(signingString.getBytes(StandardCharsets.UTF_8));
     System.out.println("messageHash: " + ByteArray.toHexString(messageHash));
     ECKey ecKey = ECKey.fromPrivate(ByteArray.fromHexString(PRIVATE_KEY));
     String sigB64 = ecKey.signHash(messageHash);
@@ -100,7 +99,7 @@ public class Erc8128HttpSigExample {
 
     String signatureHeader = ERCLABEL + "=:" + sigB64 + ":";
 
-    URL url = new URL("http://" + authority + PATH);
+    URL url = new URL("http://localhost:8090" + PATH);
     HttpURLConnection conn = (HttpURLConnection) url.openConnection();
     conn.setRequestMethod("POST");
     conn.addRequestProperty("Content-Type", "application/json");
@@ -110,7 +109,7 @@ public class Erc8128HttpSigExample {
     //When client POST, Content-Digest is append to http header
     //Server use request.getInputStream.readAllBytes(), so ignore the order of key
     conn.addRequestProperty("Content-Digest", "sha-256=:" + contentDigest + ":");
-    conn.addRequestProperty("Host", authority);
+    conn.addRequestProperty("authority", authority);
     conn.setDoOutput(true);
     conn.setDoInput(true);
     conn.setInstanceFollowRedirects(true);

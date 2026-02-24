@@ -10,11 +10,14 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import javax.annotation.PostConstruct;
 import javax.servlet.Filter;
 import javax.servlet.FilterChain;
 import javax.servlet.FilterConfig;
@@ -26,7 +29,6 @@ import javax.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Component;
-import org.tron.common.crypto.Hash;
 import org.tron.common.crypto.SignUtils;
 import org.tron.common.utils.ByteArray;
 import org.tron.common.utils.ByteUtil;
@@ -49,6 +51,12 @@ public class ERC8128Filter implements Filter {
 
   private static final String ERCLABEL = "tron";
   private static final int TTL = 60; //seconds
+  private final Set<String> authorityWhiteList = new HashSet<>();
+
+  @PostConstruct
+  public void init() {
+    authorityWhiteList.add("api.trongrid.io");
+  }
 
   @Override
   public void init(FilterConfig filterConfig) throws ServletException {
@@ -82,13 +90,18 @@ public class ERC8128Filter implements Filter {
     String signatureInput = request.getHeader(signatureInputHeader);
     String signature = request.getHeader(signatureHeader);
     String contentDigest = request.getHeader(contentDigestHeader);
+    String authority = request.getHeader("authority");
 
     //logger.info("signatureInput: {}", signatureInput);
     //logger.info("signature: {}", signature);
     //logger.info("contentDigest: {}", contentDigest);
-    if (signatureInput == null || signature == null) {
+    //logger.info("authority: {}", authority);
+    if (signatureInput == null || signature == null || authority == null) {
       //no need to verify http signature if anyone is null
       return;
+    }
+    if (!authorityWhiteList.isEmpty() && !authorityWhiteList.contains(authority)) {
+      throw new Exception("Not allowed authority: " + authority);
     }
 
     // 2. parse SignatureInput as Structured Field Dictionary.
@@ -220,7 +233,6 @@ public class ERC8128Filter implements Filter {
 
     // 9. construct to be singed string
     String method = request.getMethod();
-    String authority = request.getHeader("Host");
     String path = request.getRequestURI();
     String query = request.getQueryString();
 
@@ -260,7 +272,8 @@ public class ERC8128Filter implements Filter {
 
     // 10. verify signature
     //logger.info("finalMessage: {}", finalMessage);
-    byte[] messageHash = Hash.sha3(finalMessage.getBytes(StandardCharsets.UTF_8));
+    MessageDigest digest = MessageDigest.getInstance("SHA-256");
+    byte[] messageHash = digest.digest(finalMessage.getBytes(StandardCharsets.UTF_8));
     //logger.info("messageHash: {}", ByteArray.toHexString(messageHash));
     //logger.info("signatureBase64: {}", signatureBase64);
 
