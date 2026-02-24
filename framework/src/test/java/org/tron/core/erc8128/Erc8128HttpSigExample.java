@@ -2,7 +2,6 @@ package org.tron.core.erc8128;
 
 import static org.tron.common.utils.Commons.decodeFromBase58Check;
 
-import com.google.protobuf.ByteString;
 import java.io.BufferedReader;
 import java.io.DataOutputStream;
 import java.io.IOException;
@@ -14,9 +13,9 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Base64;
 import org.tron.common.crypto.ECKey;
-import org.tron.common.crypto.ECKey.ECDSASignature;
 import org.tron.common.crypto.Hash;
 import org.tron.common.utils.ByteArray;
+import org.tron.keystore.Wallet;
 
 public class Erc8128HttpSigExample {
 
@@ -31,11 +30,14 @@ public class Erc8128HttpSigExample {
   private static final String authority = "localhost:8090"; //only use for test
   //private static final String authority = "api.trongrid.io"; //use for production
   private static final String PATH = "/wallet/getaccount";
+  private static final String ERCLABEL = "tron";
+  private static final String noncePrefix = "b64url_";
 
   public static void main(String[] args) throws NoSuchAlgorithmException, IOException {
 
     // POST uses json
     String jsonBody = String.format("{\"address\":\"%s\",\"visible\":true}", ADDRESS);
+    System.out.println("jsonBody: " + jsonBody);
 
     // get the sha256 of jsonBody, only used in POST
     MessageDigest digest = MessageDigest.getInstance("SHA-256");
@@ -44,6 +46,9 @@ public class Erc8128HttpSigExample {
 
     long createTimestamp = System.currentTimeMillis() / 1000; //seconds
     long expireTimestamp = createTimestamp + 60; //seconds
+
+    String nonce = noncePrefix + Base64.getEncoder().encodeToString(Wallet.generateRandomBytes(64));
+    System.out.println("nonce: " + nonce);
 
     // build keyid with tip-8128
     byte[] addressHex = new byte[20];
@@ -56,17 +61,22 @@ public class Erc8128HttpSigExample {
     // construct signingString, with the order of tip-8128.
     // @query only belongs to method GET, don't add it in POST.
     // content-digest only belongs to method POST. if length=0,ignore
-    String signingString = "\"@method\": POST\n" + //must use uppercase and line
-        "\"@authority\": " + authority + "\n" +
-        "\"@path\": " + PATH + "\n" +
-        //"\"@query\": " + queryOfGet + "\n" + //only used in GET
-        "\"content-digest\": sha-256=:" + contentDigest + ":\n" + //only used in POST
-        //add "@query" if GET
-        "\"@signature-params\": (\"@method\" \"@authority\" \"@path\" \"content-digest\")" +
-        ";created=" + createTimestamp +
-        ";expires=" + expireTimestamp +
-        ";keyid=\"" + keyId + "\"" +
-        ";alg=\"eth_personalSign\"";
+    // nonce parameter MUST be included in Non-Replayable signatures
+    String signingString = "\"@method\": POST\n"  //must use uppercase and line
+        + "\"@authority\": " + authority + "\n"
+        + "\"@path\": " + PATH + "\n"
+        //+ "\"@query\": " + queryOfGet + "\n"  //only used in GET
+        + "\"content-digest\": sha-256=:" + contentDigest + ":\n"; //only used in POST
+
+    //this part is not included in http header signatureInput, only used in client
+    signingString +=
+        "\"@signature-params\": (\"@method\" \"@authority\" \"@path\" \"content-digest\");";
+
+    signingString += "created=" + createTimestamp
+        + ";expires=" + expireTimestamp
+        + ";nonce=\"" + nonce + "\""
+        + ";keyid=\"" + keyId + "\""
+        + ";alg=\"eth_personalSign\"";
 
     byte[] singedBytes = signingString.getBytes(StandardCharsets.UTF_8);
     signingString = "\u0019TRON Signed Message:\n" + singedBytes.length + signingString;
@@ -74,20 +84,21 @@ public class Erc8128HttpSigExample {
 
     // sign the messageHash of signingString with PRIVATE_KEY
     byte[] messageHash = Hash.sha3(signingString.getBytes(StandardCharsets.UTF_8));
+    System.out.println("messageHash: " + ByteArray.toHexString(messageHash));
     ECKey ecKey = ECKey.fromPrivate(ByteArray.fromHexString(PRIVATE_KEY));
-    ECDSASignature signature = ecKey.sign(messageHash);
-    ByteString sign = ByteString.copyFrom(signature.toByteArray());
-
-    // use Base64
-    String sigB64 = Base64.getEncoder().encodeToString(sign.toByteArray());
+    String sigB64 = ecKey.signHash(messageHash);
+    System.out.println("signatureBase64: " + sigB64);
 
     // build Signature-Input & Signature for request HEADER。@ represetns placeholder
-    String signatureInput =
-        "tron=(\"@method\" \"@authority\" \"@path\" \"content-digest\");" +
-            "created=" + createTimestamp + ";expires=" + expireTimestamp +
-            ";keyid=\"" + keyId + "\";alg=\"eth_personalSign\"";
+    String signatureInput = ERCLABEL
+        + "=(\"@method\" \"@authority\" \"@path\" \"content-digest\")"
+        + ";created=" + createTimestamp
+        + ";expires=" + expireTimestamp
+        + ";nonce=\"" + nonce + "\""
+        + ";keyid=\"" + keyId + "\""
+        + ";alg=\"eth_personalSign\"";
 
-    String signatureHeader = "tron=:" + sigB64 + ":";
+    String signatureHeader = ERCLABEL + "=:" + sigB64 + ":";
 
     URL url = new URL("http://" + authority + PATH);
     HttpURLConnection conn = (HttpURLConnection) url.openConnection();
@@ -99,6 +110,7 @@ public class Erc8128HttpSigExample {
     //When client POST, Content-Digest is append to http header
     //Server use request.getInputStream.readAllBytes(), so ignore the order of key
     conn.addRequestProperty("Content-Digest", "sha-256=:" + contentDigest + ":");
+    conn.addRequestProperty("Host", authority);
     conn.setDoOutput(true);
     conn.setDoInput(true);
     conn.setInstanceFollowRedirects(true);

@@ -12,6 +12,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.tron.common.application.HttpService;
 import org.tron.core.config.args.Args;
+import org.tron.core.services.filter.ERC8128Filter;
 import org.tron.core.services.filter.HttpApiAccessFilter;
 import org.tron.core.services.filter.HttpInterceptor;
 import org.tron.core.services.filter.LiteFnQueryHttpFilter;
@@ -265,6 +266,8 @@ public class FullNodeHttpApiService extends HttpService {
   private LiteFnQueryHttpFilter liteFnQueryHttpFilter;
   @Autowired
   private HttpApiAccessFilter httpApiAccessFilter;
+  @Autowired
+  private ERC8128Filter erc8128Filter;
   @Autowired
   private GetTransactionFromPendingServlet getTransactionFromPendingServlet;
   @Autowired
@@ -526,6 +529,10 @@ public class FullNodeHttpApiService extends HttpService {
     // http access filter, it should have higher priority than HttpInterceptor
     context.addFilter(new FilterHolder(httpApiAccessFilter), "/*",
         EnumSet.allOf(DispatcherType.class));
+
+    // erc8128 verify filter
+    context.addFilter(new FilterHolder(erc8128Filter), "/*", EnumSet.allOf(DispatcherType.class));
+
     // note: if the pathSpec of servlet is not started with wallet, it should be included here
     context.getServletHandler().getFilterMappings()[1]
         .setPathSpecs(new String[] {"/wallet/*",

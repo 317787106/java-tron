@@ -15,12 +15,16 @@
 
 package org.tron.common.application;
 
+import java.util.EnumSet;
 import java.util.concurrent.CompletableFuture;
+import javax.servlet.DispatcherType;
 import lombok.extern.slf4j.Slf4j;
 import org.eclipse.jetty.server.ConnectionLimit;
 import org.eclipse.jetty.server.Server;
+import org.eclipse.jetty.servlet.FilterHolder;
 import org.eclipse.jetty.servlet.ServletContextHandler;
 import org.tron.core.config.args.Args;
+import org.tron.core.services.filter.ERC8128Filter;
 
 @Slf4j(topic = "rpc")
 public abstract class HttpService extends AbstractService {
@@ -69,7 +73,5 @@ public abstract class HttpService extends AbstractService {
 
   protected abstract void addServlet(ServletContextHandler context);
 
-  protected void addFilter(ServletContextHandler context) {
-
-  }
+  protected abstract void addFilter(ServletContextHandler context);
 }

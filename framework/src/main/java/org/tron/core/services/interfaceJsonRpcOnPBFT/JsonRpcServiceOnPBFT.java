@@ -25,4 +25,7 @@ public class JsonRpcServiceOnPBFT extends HttpService {
   public void addServlet(ServletContextHandler context) {
     context.addServlet(new ServletHolder(jsonRpcOnPBFTServlet), "/jsonrpc");
   }
+
+  @Override
+  protected void addFilter(ServletContextHandler context) {}
 }

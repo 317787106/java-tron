@@ -25,4 +25,7 @@ public class JsonRpcServiceOnSolidity extends HttpService {
   public void addServlet(ServletContextHandler context) {
     context.addServlet(new ServletHolder(jsonRpcOnSolidityServlet), "/jsonrpc");
   }
+
+  @Override
+  protected void addFilter(ServletContextHandler context) {}
 }
