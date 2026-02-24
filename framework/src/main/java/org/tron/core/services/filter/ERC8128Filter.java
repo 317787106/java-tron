@@ -159,14 +159,14 @@ public class ERC8128Filter implements Filter {
 
     // 4. Check nonce, Only Non-Replayable requests supported
     String nonce = inputParams.get("nonce");
-    if (nonce == null) {
-      throw new Exception("Nonce is null");
+    if (StringUtils.isEmpty(nonce)) {
+      throw new Exception("Key nonce is not found or invalid");
     }
 
     // 5. Check if the nonce has already been used.
     String keyid = inputParams.get("keyid");
     if (StringUtils.isEmpty(keyid)) { // Mandatory Parameters
-      throw new Exception("Key keyid is not found");
+      throw new Exception("Key keyid is not found or invalid");
     }
 
     // 6. Check if use right  CHAINID
@@ -182,7 +182,7 @@ public class ERC8128Filter implements Filter {
     }
     byte[] sigaddressBytes = ByteArray.fromHexString(items[2]);
 
-    // 7. Check if the replayKey has already been used. "abc" + "123" or "123" + "c123"
+    // 7. Check if the replayKey has already been used. "abc" + "123" is not same as "ab" + "c123"
     String replayKey = keyid + ":" + nonce;
     if (Boolean.TRUE.equals(replayKeyCache.getIfPresent(replayKey))) {
       throw new Exception("Replay key already exists");
