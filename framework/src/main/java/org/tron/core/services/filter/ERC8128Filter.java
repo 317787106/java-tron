@@ -86,8 +86,8 @@ public class ERC8128Filter implements Filter {
     //logger.info("signature: {}", signature);
     //logger.info("contentDigest: {}", contentDigest);
     if (signatureInput == null || signature == null) {
-      throw new Exception(
-          "Http header " + signatureInputHeader + " or " + signatureHeader + " is null");
+      //no need to verify http signature if anyone is null
+      return;
     }
 
     // 2. parse SignatureInput as Structured Field Dictionary.
