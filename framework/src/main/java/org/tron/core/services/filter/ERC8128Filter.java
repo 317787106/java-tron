@@ -48,6 +48,7 @@ public class ERC8128Filter implements Filter {
   private static final long CHAINID = ByteArray.toLong(ByteArray.fromHexString("0xcd8690dc"));
 
   private static final String ERCLABEL = "tron";
+  private static final int TTL = 60; //seconds
 
   @Override
   public void init(FilterConfig filterConfig) throws ServletException {
@@ -153,7 +154,7 @@ public class ERC8128Filter implements Filter {
     if (created > now) {
       throw new Exception("Signature make sure created <= now");
     }
-    if (expires - created > 60) {
+    if (expires - created > TTL) {
       throw new Exception("Signature make sure expires - created <= 60 seconds");
     }
 
@@ -192,7 +193,7 @@ public class ERC8128Filter implements Filter {
     // (at minimum: if `content-digest` is covered, recompute and compare it).
     // only sha-256 is supported. Format: sha-256=:xxxx:
     boolean covered = placeholders.contains("content-digest");
-    if (covered && StringUtils.isNoneEmpty(contentDigest)) {
+    if (covered && StringUtils.isNotEmpty(contentDigest)) {
       index = contentDigest.indexOf("="); // first index of =
       String key = contentDigest.substring(0, index);
       String value = contentDigest.substring(index + 1);
