@@ -73,15 +73,19 @@ public class ERC8128Filter implements Filter {
 
     try {
       verifyHttpSignature(wrapped);
+      filterChain.doFilter(wrapped, response);
     } catch (Exception e) {
       logger.error("", e);
       resp.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-      resp.getWriter().write(e.getMessage());
-      //resp.getWriter().write("Signature verification error");
-      return;
-    }
+      resp.setContentType("application/json");
+      resp.setCharacterEncoding("UTF-8");
 
-    filterChain.doFilter(wrapped, response);
+      String body = "{\"error\":\"" + e.getMessage() + "\"}"; // Signature verification error
+      byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
+      resp.setContentLength(bytes.length);
+      resp.getOutputStream().write(bytes);
+      resp.getOutputStream().flush();
+    }
   }
 
   private void verifyHttpSignature(CachedBodyHttpServletRequest request) throws Exception {
@@ -183,7 +187,7 @@ public class ERC8128Filter implements Filter {
       throw new Exception("Key keyid is not found or invalid");
     }
 
-    // 6. Check if use right  CHAINID
+    // 6. Check if use right keyid
     String[] items = keyid.split(":");
     if (items.length != 3) {
       throw new Exception("Invalid keyid");
@@ -195,6 +199,9 @@ public class ERC8128Filter implements Filter {
       throw new Exception("Key keyid contains invalid chainid");
     }
     byte[] sigaddressBytes = ByteArray.fromHexString(items[2]);
+    if (sigaddressBytes.length != (DecodeUtil.ADDRESS_SIZE - 2) / 2) {
+      throw new Exception("Key keyid contains invalid address");
+    }
 
     // 7. Check if the replayKey has already been used. "abc" + "123" is not same as "ab" + "c123"
     String replayKey = keyid + ":" + nonce;

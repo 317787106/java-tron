@@ -5,6 +5,7 @@ import static org.tron.common.utils.Commons.decodeFromBase58Check;
 import java.io.BufferedReader;
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -121,16 +122,19 @@ public class Erc8128HttpSigExample {
     out.flush();
     out.close();
 
-    BufferedReader in = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+    int responseCode = conn.getResponseCode();
+    System.out.println("\nStatus: " + responseCode);
+
+    InputStream inputStream = responseCode >= 400 ? conn.getErrorStream() : conn.getInputStream();
+    BufferedReader in = new BufferedReader(new InputStreamReader(inputStream));
     String inputLine;
     StringBuilder content = new StringBuilder();
     while ((inputLine = in.readLine()) != null) {
       content.append(inputLine);
     }
     in.close();
-
-    System.out.println("\nStatus: " + conn.getResponseCode());
     System.out.println("\nResponse: " + content);
+
     conn.disconnect();
   }
 }
