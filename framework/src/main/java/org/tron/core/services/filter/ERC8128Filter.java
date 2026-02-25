@@ -1,5 +1,6 @@
 package org.tron.core.services.filter;
 
+import com.alibaba.fastjson.JSONObject;
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
 import java.io.IOException;
@@ -28,15 +29,20 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.tron.common.crypto.SignUtils;
 import org.tron.common.utils.ByteArray;
 import org.tron.common.utils.ByteUtil;
 import org.tron.common.utils.DecodeUtil;
+import org.tron.core.ChainBaseManager;
 
 @Component
 @Slf4j
 public class ERC8128Filter implements Filter {
+
+  @Autowired
+  private ChainBaseManager chainBaseManager;
 
   public static String signatureInputHeader = "Signature-Input";
   public static String signatureHeader = "Signature";
@@ -46,16 +52,19 @@ public class ERC8128Filter implements Filter {
       .newBuilder().maximumSize(10000)
       .expireAfterWrite(10, TimeUnit.MINUTES).recordStats().build();
 
-  // todo: fix later using real chainid
-  private static final long CHAINID = ByteArray.toLong(ByteArray.fromHexString("0xcd8690dc"));
+  private static long CHAINID;
 
   private static final String ERCLABEL = "tron";
+  private static final String KeyLabel = "tip8128";
   private static final int TTL = 60; //seconds
   private final Set<String> authorityWhiteList = new HashSet<>();
 
   @PostConstruct
   public void init() {
-    authorityWhiteList.add("api.trongrid.io");
+    authorityWhiteList.add("api.trongrid.io"); //use for test, may import from config file
+    byte[] chainIdBytes = chainBaseManager.getGenesisBlockId().getBytes();
+    CHAINID = ByteArray.toLong(
+        Arrays.copyOfRange(chainIdBytes, chainIdBytes.length - 4, chainIdBytes.length));
   }
 
   @Override
@@ -64,27 +73,34 @@ public class ERC8128Filter implements Filter {
 
   @Override
   public void doFilter(ServletRequest request, ServletResponse response,
-      FilterChain filterChain) throws IOException, ServletException {
-    HttpServletRequest req = (HttpServletRequest) request;
-    HttpServletResponse resp = (HttpServletResponse) response;
+      FilterChain chain) throws IOException, ServletException {
 
-    CachedBodyHttpServletRequest wrapped =
-        new CachedBodyHttpServletRequest(req);
+    if (request instanceof HttpServletRequest) {
+      HttpServletRequest req = (HttpServletRequest) request;
+      HttpServletResponse resp = (HttpServletResponse) response;
 
-    try {
-      verifyHttpSignature(wrapped);
-      filterChain.doFilter(wrapped, response);
-    } catch (Exception e) {
-      logger.error("", e);
-      resp.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-      resp.setContentType("application/json");
-      resp.setCharacterEncoding("UTF-8");
+      CachedBodyHttpServletRequest wrapped = new CachedBodyHttpServletRequest(req);
 
-      String body = "{\"error\":\"" + e.getMessage() + "\"}"; // Signature verification error
-      byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
-      resp.setContentLength(bytes.length);
-      resp.getOutputStream().write(bytes);
-      resp.getOutputStream().flush();
+      try {
+        verifyHttpSignature(wrapped);
+      } catch (Exception e) {
+        logger.error("", e);
+        resp.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+        resp.setContentType("application/json; charset=utf-8");
+        resp.setCharacterEncoding("UTF-8");
+
+        JSONObject jsonObject = new JSONObject();
+        jsonObject.put("Error", e.getMessage());
+        byte[] bytes = jsonObject.toJSONString().getBytes(StandardCharsets.UTF_8);
+        resp.setContentLength(bytes.length);
+
+        resp.getOutputStream().write(bytes);
+        resp.getOutputStream().flush();
+        return;
+      }
+      chain.doFilter(wrapped, response);
+    } else {
+      chain.doFilter(request, response);
     }
   }
 
@@ -177,9 +193,10 @@ public class ERC8128Filter implements Filter {
 
     // 4. Check nonce, Only Non-Replayable requests supported
     String nonce = inputParams.get("nonce");
-    if (StringUtils.isEmpty(nonce)) {
+    if (StringUtils.isEmpty(nonce) || nonce.length() > 100) {
       throw new Exception("Key nonce is not found or invalid");
     }
+    //logger.info("nonce: {}", nonce);
 
     // 5. Check if the nonce has already been used.
     String keyid = inputParams.get("keyid");
@@ -192,8 +209,8 @@ public class ERC8128Filter implements Filter {
     if (items.length != 3) {
       throw new Exception("Invalid keyid");
     }
-    if (!items[0].equals("tip8128")) {
-      throw new Exception("Key keyid must begin with tip8128");
+    if (!items[0].equals(KeyLabel)) {
+      throw new Exception("Key keyid must begin with " + KeyLabel);
     }
     if (Long.parseLong(items[1]) != CHAINID) {
       throw new Exception("Key keyid contains invalid chainid");
