@@ -4,7 +4,6 @@ on:
   workflow_run:
     workflows: ["RockyLinux Coverage Build"]
     types: [completed]
-    branches: [ 'develop', 'release_**' ]
 
 jobs:
   upload-coverage:
