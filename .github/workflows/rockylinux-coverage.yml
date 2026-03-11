@@ -1,0 +1,57 @@
+name: RockyLinux Coverage Build
+
+on:
+  pull_request:
+    branches: [ 'develop', 'release_**' ]
+    types: [ opened, edited, synchronize, reopened ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+
+  docker-build-rockylinux:
+    name: Build rockylinux (JDK8)
+
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    container:
+      image: rockylinux:8
+
+    env:
+      GRADLE_USER_HOME: /github/home/.gradle
+
+    steps:
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          dnf -y install java-1.8.0-openjdk-devel git wget unzip which jq bc curl
+
+      - name: Java version
+        run: java -version
+
+      - name: Build
+        run: |
+          chmod +x gradlew
+          ./gradlew clean build --no-daemon
+
+      - name: Generate coverage
+        run: |
+          ./gradlew jacocoTestReport --no-daemon
+
+      - name: Upload jacoco artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: jacoco-rockylinux
+          path: |
+            **/build/reports/jacoco/test/jacocoTestReport.xml
+            **/build/test-results/**
+          if-no-files-found: error
