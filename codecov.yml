@@ -1,0 +1,11 @@
+comment: false
+
+coverage:
+  status:
+    project:
+      default:
+        target: auto    # must not decrease from base branch
+        threshold: 0.1% # allow 0.1% fluctuation
+    patch:
+      default:
+        target: 0%      # minimum coverage for changed lines
