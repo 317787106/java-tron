@@ -74,9 +74,9 @@ jobs:
 
       - name: Upload to Codecov
         uses: codecov/codecov-action@v5
-        working-directory: ./coverage
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
+          directory: ./coverage
           override_commit: ${{ steps.pr.outputs.sha }}
           override_branch: ${{ steps.pr.outputs.branch }}
           override_pr: ${{ steps.pr.outputs.number }}
