@@ -56,9 +56,16 @@ jobs:
             exit 1
           fi
 
+      - name: Find coverage report
+        id: find_report
+        run: |
+          report_path=$(find coverage -name jacocoTestReport.xml)
+          echo "report_path=${report_path}" >> "$GITHUB_OUTPUT"
+
       - name: Show downloaded files
         shell: bash
         run: |
+          echo "Found report at: ${{ steps.find_report.outputs.report_path }}"
           echo "Coverage files:"
           find coverage -type f | sort
           echo
@@ -76,7 +83,7 @@ jobs:
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          files: coverage/**/jacocoTestReport.xml
+          files: ${{ steps.find_report.outputs.report_path }}
           disable_search: true
           override_commit: ${{ steps.pr.outputs.sha }}
           override_branch: ${{ steps.pr.outputs.branch }}

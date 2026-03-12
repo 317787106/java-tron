@@ -75,14 +75,22 @@ jobs:
           name: base-jacoco-xml
           path: coverage-artifacts
 
+      - name: Find coverage report
+        id: find_report
+        run: |
+          report_path=$(find coverage-artifacts -name jacocoTestReport.xml)
+          echo "report_path=${report_path}" >> "$GITHUB_OUTPUT"
+
       - name: Show coverage files
-        run: find coverage-artifacts -type f | sort
+        run: |
+          echo "Found report at: ${{ steps.find_report.outputs.report_path }}"
+          find coverage-artifacts -type f | sort
 
       - name: Upload base coverage to Codecov
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          files: "coverage-artifacts/**/jacocoTestReport.xml"
+          files: ${{ steps.find_report.outputs.report_path }}
           disable_search: true
           override_branch: ${{ github.ref_name }}
           fail_ci_if_error: true
