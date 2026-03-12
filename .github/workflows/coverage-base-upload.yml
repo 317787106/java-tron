@@ -2,9 +2,7 @@ name: Base Coverage Upload
 
 on:
   push:
-    branches:
-      - develop
-      - 'release_**'
+    branches: [ 'develop', 'release_**' ]
 
 permissions:
   contents: read
@@ -14,8 +12,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  upload-base-coverage:
-    name: Upload Base Coverage
+  build-base-coverage:
+    name: Build Base Coverage
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
@@ -46,13 +44,37 @@ jobs:
       - name: Stop Gradle daemon
         run: ./gradlew --stop || true
 
-      - name: Build and generate JaCoCo report
-        run: |
-          ./gradlew clean build jacocoTestReport --no-daemon --no-build-cache
+      - name: Build
+        run: ./gradlew framework:test --tests org.tron.core.zksnark.ShieldedReceiveTest
+
+      - name: Generate JaCoCo report
+        run: ./gradlew jacocoTestReport --no-daemon --no-build-cache
+
+      - name: Upload coverage artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: base-jacoco-xml
+          path: |
+            **/build/reports/jacoco/test/jacocoTestReport.xml
+            **/build/test-results/**
+            **/build/reports/**
+          if-no-files-found: error
+
+  upload-base-coverage:
+    name: Upload Base Coverage to Codecov
+    needs: build-base-coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Download coverage artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: base-jacoco-xml
+          path: coverage-artifacts
 
       - name: Show coverage files
-        run: |
-          find . -path "*/build/reports/jacoco/test/jacocoTestReport.xml" -type f | sort
+        run: find coverage-artifacts -type f | sort
 
       - name: Upload base coverage to Codecov
         uses: codecov/codecov-action@v5
