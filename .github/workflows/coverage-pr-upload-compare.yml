@@ -76,8 +76,9 @@ jobs:
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          directory: ./coverage
-          root_dir: ./
+#          directory: ./coverage
+          files: "**/build/reports/jacoco/test/jacocoTestReport.xml"
+#          root_dir: ./
           gcov_executable: ''
           override_commit: ${{ steps.pr.outputs.sha }}
           override_branch: ${{ steps.pr.outputs.branch }}
