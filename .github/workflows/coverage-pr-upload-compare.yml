@@ -34,49 +34,6 @@ jobs:
           run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-#      - name: Download PR metadata artifact
-#        uses: actions/download-artifact@v4
-#        with:
-#          name: pr-metadata
-#          path: pr-meta
-#          run-id: ${{ github.event.workflow_run.id }}
-#          github-token: ${{ secrets.GITHUB_TOKEN }}
-#
-#      - name: Read PR metadata
-#        id: pr
-#        shell: bash
-#        run: |
-#          echo "number=$(cat pr-meta/pr_number.txt)" >> "$GITHUB_OUTPUT"
-#          echo "sha=$(cat pr-meta/head_sha.txt)" >> "$GITHUB_OUTPUT"
-#          echo "branch=$(cat pr-meta/head_ref.txt)" >> "$GITHUB_OUTPUT"
-#          echo "label=$(cat pr-meta/head_label.txt)" >> "$GITHUB_OUTPUT"
-#          echo "base=$(cat pr-meta/base_ref.txt)" >> "$GITHUB_OUTPUT"
-#
-#      - name: Validate base branch
-#        shell: bash
-#        run: |
-#          base="${{ steps.pr.outputs.base }}"
-#          if [[ "$base" != "develop" && "$base" != release_* ]]; then
-#            echo "Unsupported base branch: $base"
-#            exit 1
-#          fi
-#
-#      - name: Show downloaded files
-#        shell: bash
-#        run: |
-#          echo "Coverage files:"
-#          find coverage -type f | sort
-#          echo
-#          echo "PR metadata files:"
-#          find pr-meta -type f | sort
-#          echo
-#          echo "Resolved PR info:"
-#          echo "PR number:  ${{ steps.pr.outputs.number }}"
-#          echo "Head SHA:   ${{ steps.pr.outputs.sha }}"
-#          echo "Head branch: ${{ steps.pr.outputs.branch }}"
-#          echo "Head label: ${{ steps.pr.outputs.label }}"
-#          echo "Base ref:   ${{ steps.pr.outputs.base }}"
-
       - name: Upload to Codecov
         uses: codecov/codecov-action@v5
         with:
