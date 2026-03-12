@@ -76,6 +76,7 @@ jobs:
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           directory: ./coverage-artifacts
+          root_dir: ./
           gcov_executable: ''
           override_branch: ${{ github.ref_name }}
           fail_ci_if_error: true
