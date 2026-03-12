@@ -73,9 +73,9 @@ jobs:
 
       - name: Upload base coverage to Codecov
         uses: codecov/codecov-action@v5
-        working-directory: ./coverage-artifacts
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
+          directory: ./coverage-artifacts
           override_branch: ${{ github.ref_name }}
           fail_ci_if_error: true
           verbose: true
