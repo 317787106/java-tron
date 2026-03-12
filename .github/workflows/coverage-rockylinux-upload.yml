@@ -2,13 +2,8 @@ name: RockyLinux Coverage Build
 
 on:
   pull_request:
-    branches:
-      - develop
-      - 'release_**'
-    types:
-      - opened
-      - synchronize
-      - reopened
+    branches: [ 'develop', 'release_**' ]
+    types: [ opened, synchronize, reopened ]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
