@@ -1,10 +1,8 @@
 name: System Test
 
 on:
-  push:
-    branches: [ 'master', 'release_**' ]
   pull_request:
-    branches: [ 'develop', 'release_**' ]
+    branches: [ 'master','develop', 'release_**' ]
     types: [ opened, synchronize, reopened ]
 
 concurrency:

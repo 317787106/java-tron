@@ -46,15 +46,6 @@ jobs:
       - name: Generate JaCoCo report
         run: ./gradlew :framework:jacocoTestReport --no-daemon --no-build-cache
 
-#      - name: Save PR metadata
-#        run: |
-#          mkdir -p pr-meta
-#          echo "${{ github.event.pull_request.number }}" > pr-meta/pr_number.txt
-#          echo "${{ github.event.pull_request.head.sha }}" > pr-meta/head_sha.txt
-#          echo "${{ github.event.pull_request.head.ref }}" > pr-meta/head_ref.txt
-#          echo "${{ github.event.pull_request.head.label }}" > pr-meta/head_label.txt
-#          echo "${{ github.event.pull_request.base.ref }}" > pr-meta/base_ref.txt
-
       - name: Upload JaCoCo artifact
         uses: actions/upload-artifact@v4
         with:
@@ -68,10 +59,3 @@ jobs:
             framework/build/reports/jacoco/test/jacocoTestReport.xml
             plugins/build/reports/jacoco/test/jacocoTestReport.xml
           if-no-files-found: error
-
-#      - name: Upload PR metadata artifact
-#        uses: actions/upload-artifact@v4
-#        with:
-#          name: pr-metadata
-#          path: pr-meta/*
-#          if-no-files-found: error
