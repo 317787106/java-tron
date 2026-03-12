@@ -47,7 +47,6 @@ jobs:
 
       - name: Build
         run: |
-#          ./gradlew clean build --no-daemon --no-build-cache
           ./gradlew framework:test --tests org.tron.core.zksnark.ShieldedReceiveTest
 
       - name: Generate JaCoCo report
