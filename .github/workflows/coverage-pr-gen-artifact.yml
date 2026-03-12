@@ -60,13 +60,9 @@ jobs:
         with:
           name: jacoco-coverage
           path: |
-            actuator/build/reports/jacoco/test/jacocoTestReport.xml
-            chainbase/build/reports/jacoco/test/jacocoTestReport.xml
-            common/build/reports/jacoco/test/jacocoTestReport.xml
-            consensus/build/reports/jacoco/test/jacocoTestReport.xml
-            crypto/build/reports/jacoco/test/jacocoTestReport.xml
-            framework/build/reports/jacoco/test/jacocoTestReport.xml
-            plugins/build/reports/jacoco/test/jacocoTestReport.xml
+            **/build/reports/jacoco/test/jacocoTestReport.xml
+            **/build/reports/**
+            **/build/test-results/**
           if-no-files-found: error
 
       - name: Upload PR metadata artifact

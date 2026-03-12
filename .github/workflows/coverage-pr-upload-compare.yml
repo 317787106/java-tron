@@ -77,11 +77,14 @@ jobs:
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
 #          directory: ./coverage
-          files: "**/build/reports/jacoco/test/jacocoTestReport.xml"
+#          files: "**/build/reports/jacoco/test/jacocoTestReport.xml"
 #          root_dir: ./
-          gcov_executable: ''
-          override_commit: ${{ steps.pr.outputs.sha }}
-          override_branch: ${{ steps.pr.outputs.branch }}
-          override_pr: ${{ steps.pr.outputs.number }}
+#          gcov_executable: ''
+#          override_commit: ${{ steps.pr.outputs.sha }}
+#          override_branch: ${{ steps.pr.outputs.branch }}
+#          override_pr: ${{ steps.pr.outputs.number }}
+          override_commit: ${{ github.event.pull_request.head.sha }}
+          override_branch: ${{ github.event.pull_request.head.ref }}
+          override_pr: ${{ github.event.pull_request.number }}
           fail_ci_if_error: true
           verbose: true
