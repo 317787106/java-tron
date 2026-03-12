@@ -40,11 +40,10 @@ jobs:
         run: ./gradlew --stop || true
 
       - name: Build
-        run: ./gradlew clean build --no-daemon --no-build-cache
-#        run: ./gradlew framework:test --tests org.tron.core.zksnark.ShieldedReceiveTest
+        run: ./gradlew :framework:test --tests org.tron.core.zksnark.ShieldedReceiveTest
 
       - name: Generate JaCoCo report
-        run: ./gradlew jacocoTestReport --no-daemon --no-build-cache
+        run: ./gradlew :framework:jacocoTestReport --no-daemon --no-build-cache
 
       - name: Upload coverage artifacts
         uses: actions/upload-artifact@v4
@@ -77,6 +76,7 @@ jobs:
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           directory: ./coverage-artifacts
+          disable_features: gcov
           override_branch: ${{ github.ref_name }}
           fail_ci_if_error: true
           verbose: true

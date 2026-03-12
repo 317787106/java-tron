@@ -77,6 +77,7 @@ jobs:
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           directory: ./coverage
+          disable_features: gcov
           override_commit: ${{ steps.pr.outputs.sha }}
           override_branch: ${{ steps.pr.outputs.branch }}
           override_pr: ${{ steps.pr.outputs.number }}
