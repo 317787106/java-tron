@@ -77,6 +77,7 @@ jobs:
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           directory: ./coverage
+          root_dir: ./
           gcov_executable: ''
           override_commit: ${{ steps.pr.outputs.sha }}
           override_branch: ${{ steps.pr.outputs.branch }}
