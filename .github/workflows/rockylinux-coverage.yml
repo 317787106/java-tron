@@ -2,8 +2,13 @@ name: RockyLinux Coverage Build
 
 on:
   pull_request:
-    branches: [ 'develop', 'release_**' ]
-    types: [ opened, synchronize, reopened ]
+    branches:
+      - develop
+      - 'release_**'
+    types:
+      - opened
+      - synchronize
+      - reopened
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -59,6 +64,7 @@ jobs:
           echo "${{ github.event.pull_request.number }}" > pr-meta/pr_number.txt
           echo "${{ github.event.pull_request.head.sha }}" > pr-meta/head_sha.txt
           echo "${{ github.event.pull_request.head.ref }}" > pr-meta/head_ref.txt
+          echo "${{ github.event.pull_request.head.label }}" > pr-meta/head_label.txt
           echo "${{ github.event.pull_request.base.ref }}" > pr-meta/base_ref.txt
 
       - name: Upload JaCoCo artifact
