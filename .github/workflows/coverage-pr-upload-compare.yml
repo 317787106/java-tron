@@ -43,6 +43,7 @@ jobs:
         run: |
           echo "number=$(cat pr-meta/pr_number.txt)" >> "$GITHUB_OUTPUT"
           echo "sha=$(cat pr-meta/head_sha.txt)" >> "$GITHUB_OUTPUT"
+          echo "branch=$(cat pr-meta/head_ref.txt)" >> "$GITHUB_OUTPUT"
           echo "label=$(cat pr-meta/head_label.txt)" >> "$GITHUB_OUTPUT"
           echo "base=$(cat pr-meta/base_ref.txt)" >> "$GITHUB_OUTPUT"
 
@@ -67,6 +68,7 @@ jobs:
           echo "Resolved PR info:"
           echo "PR number:  ${{ steps.pr.outputs.number }}"
           echo "Head SHA:   ${{ steps.pr.outputs.sha }}"
+          echo "Head branch: ${{ steps.pr.outputs.branch }}"
           echo "Head label: ${{ steps.pr.outputs.label }}"
           echo "Base ref:   ${{ steps.pr.outputs.base }}"
 
@@ -77,7 +79,7 @@ jobs:
           files: coverage/**/jacocoTestReport.xml
           disable_search: true
           override_commit: ${{ steps.pr.outputs.sha }}
-          override_branch: ${{ steps.pr.outputs.label }}
+          override_branch: ${{ steps.pr.outputs.branch }}
           override_pr: ${{ steps.pr.outputs.number }}
           fail_ci_if_error: true
           verbose: true
