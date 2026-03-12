@@ -7,16 +7,14 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
-
   docker-build-rockylinux:
     name: Build rockylinux (JDK8)
-
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
@@ -25,29 +23,45 @@ jobs:
 
     env:
       GRADLE_USER_HOME: /github/home/.gradle
+      LANG: en_US.UTF-8
+      LC_ALL: en_US.UTF-8
 
     steps:
-
-      - name: Checkout
+      - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Install dependencies
         run: |
-          dnf -y install java-1.8.0-openjdk-devel git wget unzip which jq bc curl
+          set -euxo pipefail
+          dnf -y install java-1.8.0-openjdk-devel git wget unzip which jq bc curl glibc-langpack-en
+          dnf -y groupinstall "Development Tools"
 
-      - name: Java version
+      - name: Check Java version
         run: java -version
+
+      - name: Grant execute permission
+        run: chmod +x gradlew
+
+      - name: Stop Gradle daemon
+        run: ./gradlew --stop || true
 
       - name: Build
         run: |
-          chmod +x gradlew
           ./gradlew clean build --no-daemon --no-build-cache
 
-      - name: Generate coverage
+      - name: Generate JaCoCo report
         run: |
           ./gradlew jacocoTestReport --no-daemon --no-build-cache
 
-      - name: Upload jacoco artifact
+      - name: Save PR metadata
+        run: |
+          mkdir -p pr-meta
+          echo "${{ github.event.pull_request.number }}" > pr-meta/pr_number.txt
+          echo "${{ github.event.pull_request.head.sha }}" > pr-meta/head_sha.txt
+          echo "${{ github.event.pull_request.head.ref }}" > pr-meta/head_ref.txt
+          echo "${{ github.event.pull_request.base.ref }}" > pr-meta/base_ref.txt
+
+      - name: Upload JaCoCo artifact
         uses: actions/upload-artifact@v4
         with:
           name: jacoco-rockylinux
@@ -55,4 +69,11 @@ jobs:
             **/build/reports/jacoco/test/jacocoTestReport.xml
             **/build/test-results/**
             **/build/reports/**
+          if-no-files-found: error
+
+      - name: Upload PR metadata artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-metadata
+          path: pr-meta/*
           if-no-files-found: error
