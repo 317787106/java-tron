@@ -3,7 +3,7 @@ name: Codecov Upload
 on:
   workflow_run:
     workflows:
-      - RockyLinux Coverage Build
+      - Coverage Build
     types:
       - completed
 
@@ -24,7 +24,7 @@ jobs:
       - name: Download coverage artifact
         uses: actions/download-artifact@v4
         with:
-          name: jacoco-rockylinux
+          name: jacoco-coverage
           path: coverage
           run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
