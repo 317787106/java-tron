@@ -194,6 +194,53 @@ jobs:
       - name: Build
         run: ./gradlew clean build --no-daemon
 
+  docker-build-rockylinux:
+    name: Build rockylinux (JDK 8 / x86_64)
+    if: github.event.action != 'edited' && !failure() && !cancelled()
+    needs: [ pr-lint, checkstyle ]
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    container:
+      image: rockylinux:8
+
+    env:
+      GRADLE_USER_HOME: /github/home/.gradle
+      LANG: en_US.UTF-8
+      LC_ALL: en_US.UTF-8
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies (Rocky 8 + JDK8)
+        run: |
+          set -euxo pipefail
+          dnf -y install java-1.8.0-openjdk-devel git wget unzip which jq bc curl glibc-langpack-en
+          dnf -y groupinstall "Development Tools"
+
+      - name: Check Java version
+        run: java -version
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            /github/home/.gradle/caches
+            /github/home/.gradle/wrapper
+          key: rockylinux-x86_64-gradle-${{ hashFiles('**/*.gradle', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            rockylinux-x86_64-gradle-
+
+      - name: Grant execute permission
+        run: chmod +x gradlew
+
+      - name: Stop Gradle daemon
+        run: ./gradlew --stop || true
+
+      - name: Build
+        run: ./gradlew clean build --no-daemon --no-build-cache
+
   docker-build-debian11:
     name: Build debian11 (JDK 8 / x86_64)
     if: github.event.action != 'edited' && !failure() && !cancelled()
