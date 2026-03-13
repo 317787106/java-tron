@@ -40,10 +40,12 @@ jobs:
         run: ./gradlew --stop || true
 
       - name: Build
-        run: ./gradlew :framework:test --tests org.tron.core.zksnark.ShieldedReceiveTest
+        run: ./gradlew clean build --no-daemon --no-build-cache
+      #        run: ./gradlew :framework:test --tests org.tron.core.zksnark.ShieldedReceiveTest
 
       - name: Generate JaCoCo report
-        run: ./gradlew :framework:jacocoTestReport --no-daemon --no-build-cache
+        run: ./gradlew jacocoTestReport --no-daemon --no-build-cache
+      #        run: ./gradlew :framework:jacocoTestReport --no-daemon --no-build-cache
 
       - name: Upload coverage artifacts
         uses: actions/upload-artifact@v4
