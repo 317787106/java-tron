@@ -130,7 +130,7 @@ jobs:
 
   build:
     name: Build ${{ matrix.os-name }}(JDK ${{ matrix.java }} / ${{ matrix.arch }})
-    if: github.event.action != 'edited' && !failure()
+    if: github.event.action != 'edited' && !failure() && !cancelled()
     needs: [pr-lint, checkstyle]
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
@@ -212,7 +212,7 @@ jobs:
           path: |
             /github/home/.gradle/caches
             /github/home/.gradle/wrapper
-          key: ${{ runner.os }}-debian11-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          key: ${{ runner.os }}-debian11-gradle-${{ hashFiles('**/*.gradle', '**/gradle-wrapper.properties') }}
           restore-keys: |
             ${{ runner.os }}-debian11-gradle-
 
