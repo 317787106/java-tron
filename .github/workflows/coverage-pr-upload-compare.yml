@@ -72,7 +72,7 @@ jobs:
     name: Compare Coverage
     needs: upload-coverage
     runs-on: ubuntu-latest
-    if: needs.upload-coverage.outputs.pr_number
+    ##if: needs.upload-coverage.outputs.pr_number
 
     steps:
       - name: Get PR details
