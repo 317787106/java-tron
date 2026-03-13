@@ -19,6 +19,8 @@ jobs:
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'pull_request'
     runs-on: ubuntu-latest
+    outputs:
+      pr_number: ${{ steps.pr.outputs.pr_number }}
 
     steps:
       - name: Checkout repo
@@ -61,7 +63,7 @@ jobs:
     name: Compare Coverage
     needs: upload-coverage
     runs-on: ubuntu-latest
-    if: steps.pr.outputs.pr_number
+    if: needs.upload-coverage.outputs.pr_number
 
     steps:
       - name: Get PR details
@@ -85,4 +87,4 @@ jobs:
 
       - name: Post coverage comment
         run: |
-          gh pr comment ${{ steps.pr.outputs.pr_number }} --body "$(cat coverage_diff.txt)"
+          gh pr comment ${{ steps.pr.outputs.pr_number }} --body-file coverage_diff.txt
