@@ -75,6 +75,11 @@ jobs:
     ##if: needs.upload-coverage.outputs.pr_number
 
     steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Get PR details
         id: pr
         uses: actions/github-script@v7
