@@ -106,6 +106,7 @@ jobs:
           PR_NUMBER=${{ steps.pr.outputs.pr_number }}
           RESPONSE=$(curl -s -H "Authorization: token ${{ secrets.CODECOV_TOKEN }}" \
             "https://api.codecov.io/api/v2/github/${{ github.repository }}/pulls/${PR_NUMBER}")
+          echo "$RESPONSE"
           echo "## Coverage Comparison" > coverage_diff.txt
           echo "" >> coverage_diff.txt
           echo "$RESPONSE" | jq -r '.diff.totals | "- Coverage: \(.coverage)%\n- Lines covered: \(.hits)\n- Lines total: \(.lines)\n- Files changed: \(.files)"' >> coverage_diff.txt
