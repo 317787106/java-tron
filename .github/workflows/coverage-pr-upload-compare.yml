@@ -107,5 +107,7 @@ jobs:
           echo "$RESPONSE" | jq -r '.diff.totals | "- Coverage: \(.coverage)%\n- Lines covered: \(.hits)\n- Lines total: \(.lines)\n- Files changed: \(.files)"' >> coverage_diff.txt
 
       - name: Post coverage comment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh pr comment ${{ steps.pr.outputs.pr_number }} --body-file coverage_diff.txt
