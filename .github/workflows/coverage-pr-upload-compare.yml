@@ -96,12 +96,15 @@ jobs:
               core.setOutput('base_sha', pr.base.sha);
             }
 
-      - name: Install Codecov
-        run: pip install codecov
-
       - name: Generate coverage diff
         run: |
-          codecov diff --token ${{ secrets.CODECOV_TOKEN }} ${{ steps.pr.outputs.base_sha }} ${{ steps.pr.outputs.pr_sha }} > coverage_diff.txt
+          BASE_SHA=${{ steps.pr.outputs.base_sha }}
+          HEAD_SHA=${{ steps.pr.outputs.pr_sha }}
+          RESPONSE=$(curl -s -H "Authorization: token ${{ secrets.CODECOV_TOKEN }}" \
+            "https://api.codecov.io/api/v2/github/${{ github.repository }}/compare/${BASE_SHA}...${HEAD_SHA}")
+          echo "## Coverage Comparison" > coverage_diff.txt
+          echo "" >> coverage_diff.txt
+          echo "$RESPONSE" | jq -r '.diff.totals | "- Coverage: \(.coverage)%\n- Lines covered: \(.hits)\n- Lines total: \(.lines)\n- Files changed: \(.files)"' >> coverage_diff.txt
 
       - name: Post coverage comment
         run: |
