@@ -1,8 +1,10 @@
 name: PR Check
 
 on:
+  push:
+    branches: [ 'master', 'release_**' ]
   pull_request:
-    branches: [ 'master','develop', 'release_**' ]
+    branches: [ 'develop', 'release_**' ]
     types: [ opened, edited, synchronize, reopened ]
 
 concurrency:
@@ -127,97 +129,3 @@ jobs:
           path: |
             framework/build/reports/checkstyle/
             plugins/build/reports/checkstyle/
-
-  build:
-    name: Build ${{ matrix.os-name }}(JDK ${{ matrix.java }} / ${{ matrix.arch }})
-    if: github.event.action != 'edited' && !failure()
-    needs: [pr-lint, checkstyle]
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 60
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - java: '8'
-            runner: ubuntu-latest
-            os-name: ubuntu
-            arch: x86_64
-          - java: '17'
-            runner: ubuntu-24.04-arm
-            os-name: ubuntu
-            arch: aarch64
-          - java: '8'
-            runner: macos-26-intel
-            os-name: macos
-            arch: x86_64
-          - java: '17'
-            runner: macos-26
-            os-name: macos
-            arch: aarch64
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up JDK ${{ matrix.java }}
-        uses: actions/setup-java@v4
-        with:
-          java-version: ${{ matrix.java }}
-          distribution: 'temurin'
-
-      - name: Cache Gradle packages
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: ${{ runner.os }}-${{ matrix.arch }}-gradle-${{ hashFiles('**/*.gradle', '**/gradle-wrapper.properties') }}
-          restore-keys: ${{ runner.os }}-${{ matrix.arch }}-gradle-
-
-      - name: Build
-        run: ./gradlew clean build --no-daemon
-
-  docker-build-debian11:
-    name: Build debian11 (JDK 8 / x86_64)
-    if: github.event.action != 'edited' && !failure()
-    needs: [pr-lint, checkstyle]
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-
-    container:
-      image: eclipse-temurin:8-jdk # base image is Debian 11 (Bullseye)
-
-    defaults:
-      run:
-        shell: bash
-
-    env:
-      GRADLE_USER_HOME: /github/home/.gradle
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Install dependencies (Debian + build tools)
-        run: |
-          set -euxo pipefail
-          apt-get update
-          apt-get install -y git wget unzip build-essential curl jq
-
-      - name: Check Java version
-        run: java -version
-
-      - name: Cache Gradle
-        uses: actions/cache@v4
-        with:
-          path: |
-            /github/home/.gradle/caches
-            /github/home/.gradle/wrapper
-          key: ${{ runner.os }}-debian11-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
-          restore-keys: |
-            ${{ runner.os }}-debian11-gradle-
-
-      - name: Grant execute permission
-        run: chmod +x gradlew
-
-      - name: Build
-        run: ./gradlew clean build --no-daemon --no-build-cache

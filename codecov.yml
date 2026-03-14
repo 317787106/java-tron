@@ -5,7 +5,7 @@ coverage:
     project:
       default:
         target: auto    # must not decrease from base branch
-        threshold: 0.1% # allow 0.1% fluctuation
+        threshold: 0.01% # allow fluctuation
     patch:
       default:
         target: 0%      # minimum coverage for changed lines
