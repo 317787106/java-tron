@@ -63,6 +63,9 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
+      - name: Check Java version
+        run: java -version
+
       - name: Cache Gradle packages
         uses: actions/cache@v4
         with:
@@ -112,14 +115,11 @@ jobs:
           restore-keys: |
             rockylinux-x86_64-gradle-
 
-      - name: Grant execute permission
-        run: chmod +x gradlew
-
       - name: Stop Gradle daemon
         run: ./gradlew --stop || true
 
       - name: Build
-        run: ./gradlew clean build --no-daemon --no-build-cache
+        run: ./gradlew clean build --no-daemon
 
   docker-build-debian11:
     name: Build debian11 (JDK 8 / x86_64)
@@ -160,8 +160,5 @@ jobs:
           restore-keys: |
             debian11-x86_64-gradle-
 
-      - name: Grant execute permission
-        run: chmod +x gradlew
-
       - name: Build
-        run: ./gradlew clean build --no-daemon --no-build-cache
+        run: ./gradlew clean build --no-daemon

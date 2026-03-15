@@ -31,21 +31,27 @@ jobs:
           distribution: 'temurin'
           cache: 'gradle'
 
+      - name: Cache Gradle build cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches/build-cache-*
+          key: gradle-build-cache-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-build-cache-${{ runner.os }}-
+
       - name: Check Java version
         run: java -version
-
-      - name: Grant execute permission
-        run: chmod +x gradlew
 
       - name: Stop Gradle daemon
         run: ./gradlew --stop || true
 
-      - name: Build
-        run: ./gradlew clean build --no-daemon --no-build-cache
+#      - name: Build
+#        run: ./gradlew clean build --no-daemon --no-build-cache
 #        run: ./gradlew :framework:test --tests org.tron.core.zksnark.ShieldedReceiveTest
 
       - name: Generate JaCoCo report
-        run: ./gradlew jacocoTestReport --no-daemon --no-build-cache
+        run: ./gradlew test jacocoTestReport --no-daemon --parallel
 #        run: ./gradlew :framework:jacocoTestReport --no-daemon --no-build-cache
 
       - name: Upload JaCoCo artifact
