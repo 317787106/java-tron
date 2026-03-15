@@ -51,7 +51,7 @@ jobs:
 #        run: ./gradlew :framework:test --tests org.tron.core.zksnark.ShieldedReceiveTest
 
       - name: Generate JaCoCo report
-        run: ./gradlew test jacocoTestReport --no-daemon --parallel
+        run: ./gradlew test jacocoTestReport --no-build-cache --no-daemon --parallel
 #        run: ./gradlew :framework:jacocoTestReport --no-daemon --no-build-cache
 
       - name: Upload JaCoCo artifact
