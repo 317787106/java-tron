@@ -34,19 +34,14 @@ jobs:
       - name: Check Java version
         run: java -version
 
-      - name: Grant execute permission
-        run: chmod +x gradlew
-
       - name: Stop Gradle daemon
         run: ./gradlew --stop || true
 
       - name: Build
-        run: ./gradlew clean build --no-daemon --no-build-cache
-#        run: ./gradlew :framework:test --tests org.tron.core.zksnark.ShieldedReceiveTest
+        run: ./gradlew clean build --no-daemon --no-build-cache --parallel
 
       - name: Generate JaCoCo report
-        run: ./gradlew jacocoTestReport --no-daemon --no-build-cache
-#        run: ./gradlew :framework:jacocoTestReport --no-daemon --no-build-cache
+        run: ./gradlew jacocoTestReport  --no-daemon --no-build-cache
 
       - name: Upload JaCoCo artifact
         uses: actions/upload-artifact@v4
