@@ -29,7 +29,7 @@ coverage:
 
         # Allow a small coverage drop tolerance
         threshold: 0.1%
-
+    patch: off
 #    patch: # PR coverage/patch UI
 #      default:
 #        # No minimum requirement for changed-line coverage
