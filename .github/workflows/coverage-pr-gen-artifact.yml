@@ -38,12 +38,10 @@ jobs:
         run: ./gradlew --stop || true
 
       - name: Build
-        run: ./gradlew clean build -x test --no-daemon --no-build-cache
-#        run: ./gradlew :framework:test --tests org.tron.core.zksnark.ShieldedReceiveTest
+        run: ./gradlew clean build --no-daemon --no-build-cache --parallel
 
       - name: Generate JaCoCo report
-        run: ./gradlew test jacocoTestReport --no-build-cache --no-daemon --parallel
-#        run: ./gradlew :framework:jacocoTestReport --no-daemon --no-build-cache
+        run: ./gradlew jacocoTestReport  --no-daemon --no-build-cache
 
       - name: Upload JaCoCo artifact
         uses: actions/upload-artifact@v4
