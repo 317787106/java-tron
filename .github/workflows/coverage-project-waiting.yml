@@ -47,7 +47,6 @@ jobs:
                   owner,
                   repo,
                   ref,
-                  check_name: targetContext,
                   per_page: 100
                 });
 
