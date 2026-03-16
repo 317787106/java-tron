@@ -41,69 +41,76 @@ jobs:
             for (let attempt = 1; attempt <= maxAttempts; attempt++) {
               core.info(`Polling attempt ${attempt}/${maxAttempts} for ${targetContext} on ${ref}`);
 
-              // Check legacy commit statuses
-              const combined = await github.rest.repos.getCombinedStatusForRef({
-                owner,
-                repo,
-                ref
-              });
+              try {
+                // Check legacy commit statuses
+                const combined = await github.rest.repos.getCombinedStatusForRef({
+                  owner,
+                  repo,
+                  ref,
+                  check_name: targetContext,
+                  per_page: 100
+                });
 
-              const statuses = combined.data.statuses || [];
-              const matchedStatus = statuses.find(s => s.context === targetContext);
+                const statuses = combined.data.statuses || [];
+                const matchedStatus = statuses.find(s => s.context === targetContext);
 
-              if (matchedStatus) {
-                core.info(`Found commit status: ${matchedStatus.context} = ${matchedStatus.state}`);
+                if (matchedStatus) {
+                  core.info(`Found commit status: ${matchedStatus.context} = ${matchedStatus.state}`);
 
-                if (matchedStatus.state === 'success') {
-                  core.info(`${targetContext} succeeded.`);
-                  return;
-                }
-
-                if (matchedStatus.state === 'failure' || matchedStatus.state === 'error') {
-                  core.setFailed(`${targetContext} is ${matchedStatus.state}.`);
-                  return;
-                }
-
-                // pending
-                await sleep(intervalMs);
-                continue;
-              }
-
-              // Check check-runs as a fallback
-              const checks = await github.rest.checks.listForRef({
-                owner,
-                repo,
-                ref,
-                check_name: targetContext,
-                per_page: 100
-              });
-
-              const checkRuns = checks.data.check_runs || [];
-              const matchedCheck = checkRuns.find(c => c.name === targetContext);
-
-              if (matchedCheck) {
-                core.info(
-                  `Found check run: ${matchedCheck.name}, status=${matchedCheck.status}, conclusion=${matchedCheck.conclusion}`
-                );
-
-                if (matchedCheck.status === 'completed') {
-                  if (matchedCheck.conclusion === 'success') {
+                  if (matchedStatus.state === 'success') {
                     core.info(`${targetContext} succeeded.`);
                     return;
                   }
 
-                  core.setFailed(
-                    `${targetContext} completed with conclusion=${matchedCheck.conclusion}.`
-                  );
-                  return;
+                  if (matchedStatus.state === 'failure' || matchedStatus.state === 'error') {
+                    core.setFailed(`${targetContext} is ${matchedStatus.state}.`);
+                    return;
+                  }
+
+                  // pending
+                  await sleep(intervalMs);
+                  continue;
                 }
 
-                // queued / in_progress
-                await sleep(intervalMs);
-                continue;
+                // Check check-runs as a fallback
+                const checks = await github.rest.checks.listForRef({
+                  owner,
+                  repo,
+                  ref
+                });
+
+                const checkRuns = checks.data.check_runs || [];
+                const matchedCheck = checkRuns.find(c => c.name === targetContext);
+
+                if (matchedCheck) {
+                  core.info(
+                    `Found check run: ${matchedCheck.name}, status=${matchedCheck.status}, conclusion=${matchedCheck.conclusion}`
+                  );
+
+                  if (matchedCheck.status === 'completed') {
+                    if (matchedCheck.conclusion === 'success') {
+                      core.info(`${targetContext} succeeded.`);
+                      return;
+                    }
+
+                    core.setFailed(
+                      `${targetContext} completed with conclusion=${matchedCheck.conclusion}.`
+                    );
+                    return;
+                  }
+
+                  // queued / in_progress
+                  await sleep(intervalMs);
+                  continue;
+                }
+
+                core.info(`${targetContext} not reported yet. Waiting...`);
+              } catch (error) {
+                core.warning(
+                  `Attempt ${attempt}/${maxAttempts} failed with transient error: ${error.message}. Retrying in ${intervalMs / 1000}s...`
+                );
               }
 
-              core.info(`${targetContext} not reported yet. Waiting...`);
               await sleep(intervalMs);
             }
 
