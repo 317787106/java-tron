@@ -28,7 +28,7 @@ coverage:
         target: auto
 
         # Allow a small coverage drop tolerance
-        threshold: 0.1%
+        threshold: 0.02%
     patch: off
 #    patch: # PR coverage/patch UI
 #      default:

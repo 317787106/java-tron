@@ -19,7 +19,7 @@ jobs:
   waiting-coverage-project:
     name: waiting-coverage-report
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 70
 
     steps:
       - name: Wait for codecov/project status
