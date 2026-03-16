@@ -56,9 +56,12 @@ jobs:
               core.setOutput('pr_sha', headSha);
               core.setOutput('pr_branch', headBranch);
               core.setOutput('base_sha', pr.base.sha);
+            } else {
+              core.setFailed(`No open pull request found for ${headOwner}:${headBranch}`);
             }
 
       - name: Upload to Codecov
+        if: ${{ steps.pr.outputs.pr_number != '' }}
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
