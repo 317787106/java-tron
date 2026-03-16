@@ -20,12 +20,12 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v5.0.0
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
       - name: Set up JDK 8
-        uses: actions/setup-java@v5.0.0
+        uses: actions/setup-java@v5
         with:
           java-version: '8'
           distribution: 'temurin'
@@ -44,7 +44,7 @@ jobs:
         run: ./gradlew jacocoTestReport  --no-daemon --no-build-cache
 
       - name: Upload JaCoCo artifact
-        uses: actions/upload-artifact@v5.0.0
+        uses: actions/upload-artifact@v5
         with:
           name: jacoco-coverage
           path: |

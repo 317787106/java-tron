@@ -24,7 +24,7 @@ jobs:
 
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v5.0.0  # must download source code
+        uses: actions/checkout@v5  # must download source code
         with:
           fetch-depth: 0
           persist-credentials: false
