@@ -10,10 +10,6 @@ on:
         description: 'Job to run: all / macos / ubuntu / rockylinux / debian11'
         required: false
         default: 'all'
-      ref:
-        description: 'Branch or commit SHA to run against'
-        required: false
-        default: ''
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
