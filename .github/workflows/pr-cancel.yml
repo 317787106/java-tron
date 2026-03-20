@@ -18,18 +18,26 @@ jobs:
           script: |
             const workflows = ['pr-build.yml', 'system-test.yml'];
             const headSha = context.payload.pull_request.head.sha;
+            const prNumber = context.payload.pull_request.number;
 
             for (const workflowId of workflows) {
               for (const status of ['in_progress', 'queued']) {
-                const { data } = await github.rest.actions.listWorkflowRuns({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  workflow_id: workflowId,
-                  status,
-                });
+                const runs = await github.paginate(
+                  github.rest.actions.listWorkflowRuns,
+                  {
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    workflow_id: workflowId,
+                    status,
+                    event: 'pull_request',
+                    per_page: 100,
+                  },
+                  (response) => response.data.workflow_runs
+                );
 
-                for (const run of data.workflow_runs) {
-                  if (run.head_sha === headSha) {
+                for (const run of runs) {
+                  const isTargetPr = run.pull_requests?.some((pr) => pr.number === prNumber);
+                  if (run.head_sha === headSha && isTargetPr) {
                     await github.rest.actions.cancelWorkflowRun({
                       owner: context.repo.owner,
                       repo: context.repo.repo,
