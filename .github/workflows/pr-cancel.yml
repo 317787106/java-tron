@@ -10,6 +10,7 @@ permissions:
 jobs:
   cancel:
     name: Cancel In-Progress Workflows
+    if: github.event.pull_request.merged == false
     runs-on: ubuntu-latest
     steps:
       - name: Cancel PR Build and System Test
