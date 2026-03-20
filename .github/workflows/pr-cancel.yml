@@ -1,7 +1,7 @@
 name: Cancel PR Workflows on Close
 
 on:
-  pull_request:
+  pull_request_target:
     types: [ closed ]
 
 permissions:
@@ -23,20 +23,16 @@ jobs:
 
             for (const workflowId of workflows) {
               for (const status of ['in_progress', 'queued']) {
-                const runs = await github.paginate(
-                  github.rest.actions.listWorkflowRuns,
-                  {
-                    owner: context.repo.owner,
-                    repo: context.repo.repo,
-                    workflow_id: workflowId,
-                    status,
-                    event: 'pull_request',
-                    per_page: 100,
-                  },
-                  (response) => response.data.workflow_runs
-                );
+                const { data } = await github.rest.actions.listWorkflowRuns({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  workflow_id: workflowId,
+                  status,
+                  event: 'pull_request',
+                  per_page: 100,
+                });
 
-                for (const run of runs) {
+                for (const run of data.workflow_runs) {
                   const isTargetPr = !run.pull_requests?.length || run.pull_requests.some((pr) => pr.number === prNumber);
                   if (run.head_sha === headSha && isTargetPr) {
                     await github.rest.actions.cancelWorkflowRun({
