@@ -85,7 +85,7 @@ jobs:
 
       - name: Upload FullNode log
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: fullnode-log
           path: java-tron/fullnode.log
