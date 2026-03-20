@@ -43,13 +43,10 @@ jobs:
         with:
           script: |
             const headSha = context.payload.workflow_run.head_sha;
-            const headOwner = context.payload.workflow_run.head_repository.owner.login;
-            const headBranch = context.payload.workflow_run.head_branch;
-            const { data: pulls } = await github.rest.pulls.list({
+            const { data: pulls } = await github.rest.repos.listPullRequestsAssociatedWithCommit({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              state: 'open',
-              head: `${headOwner}:${headBranch}`
+              commit_sha: headSha,
             });
             if (pulls.length > 0) {
               const pr = pulls[0];
@@ -58,7 +55,7 @@ jobs:
               core.setOutput('pr_branch', headBranch);
               core.setOutput('base_sha', pr.base.sha);
             } else {
-              core.setFailed(`No open pull request found for ${headOwner}:${headBranch}`);
+              core.setFailed(`No pull request found for commit ${headSha}`);
             }
 
       - name: Upload to Codecov
