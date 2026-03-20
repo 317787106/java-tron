@@ -1,0 +1,42 @@
+name: Cancel PR Workflows on Close
+
+on:
+  pull_request:
+    types: [ closed ]
+
+permissions:
+  actions: write
+
+jobs:
+  cancel:
+    name: Cancel In-Progress Workflows
+    runs-on: ubuntu-latest
+    steps:
+      - name: Cancel PR Build and System Test
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const workflows = ['pr-build.yml', 'system-test.yml'];
+            const headSha = context.payload.pull_request.head.sha;
+
+            for (const workflowId of workflows) {
+              for (const status of ['in_progress', 'queued']) {
+                const { data } = await github.rest.actions.listWorkflowRuns({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  workflow_id: workflowId,
+                  status,
+                });
+
+                for (const run of data.workflow_runs) {
+                  if (run.head_sha === headSha) {
+                    await github.rest.actions.cancelWorkflowRun({
+                      owner: context.repo.owner,
+                      repo: context.repo.repo,
+                      run_id: run.id,
+                    });
+                    console.log(`Cancelled ${workflowId} run #${run.id} (${status})`);
+                  }
+                }
+              }
+            }
