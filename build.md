@@ -78,4 +78,3 @@ dependencies {
   3. IntelliJ will import the project and start gradle syncing, which will take several minutes, depending on your network connection and your IntelliJ configuration
   4. Enable Annotations, `Preferences` -> Search `annotations` -> check `Enable Annotation Processing`.
   5. When the syncing finishes, select `Gradle` -> `Tasks` -> `build`, and then double click `build` option.
-  
