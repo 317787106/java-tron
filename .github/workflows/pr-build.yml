@@ -4,6 +4,18 @@ on:
   pull_request:
     branches: [ 'master','develop', 'release_**' ]
     types: [ opened, synchronize, reopened ]
+    paths-ignore:
+      - '**.md'
+      - '**.txt'
+      - '.gitignore'
+      - '**/.gitignore'
+      - '.editorconfig'
+      - '.gitattributes'
+      - 'docs/**'
+      - 'CHANGELOG'
+      - '.github/ISSUE_TEMPLATE/**'
+      - '.github/PULL_REQUEST_TEMPLATE/**'
+      - '.github/CODEOWNERS'
   workflow_dispatch:
     inputs:
       job:
