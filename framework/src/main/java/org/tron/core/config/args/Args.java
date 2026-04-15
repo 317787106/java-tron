@@ -1353,6 +1353,7 @@ public class Args extends CommonParameter {
     if (address == null) {
       return null;
     }
+    logger.info("Resolve {} to {}", host, address.getHostAddress());
     return new InetSocketAddress(address, port);
   }
 
