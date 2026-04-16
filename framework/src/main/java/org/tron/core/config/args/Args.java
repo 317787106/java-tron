@@ -12,6 +12,7 @@ import static org.tron.core.Constant.MAX_PROPOSAL_EXPIRE_TIME;
 import static org.tron.core.Constant.MIN_PROPOSAL_EXPIRE_TIME;
 import static org.tron.core.config.Parameter.ChainConstant.BLOCK_PRODUCE_TIMEOUT_PERCENT;
 import static org.tron.core.config.Parameter.ChainConstant.MAX_ACTIVE_WITNESS_NUM;
+import static org.tron.core.config.args.InetUtil.resolveInetAddress;
 import static org.tron.core.exception.TronError.ErrCode.PARAMETER_INIT;
 
 import com.beust.jcommander.JCommander;
@@ -41,9 +42,6 @@ import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Future;
 import java.util.stream.Collectors;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -58,7 +56,6 @@ import org.tron.common.args.GenesisBlock;
 import org.tron.common.args.Witness;
 import org.tron.common.config.DbBackupConfig;
 import org.tron.common.cron.CronExpression;
-import org.tron.common.es.ExecutorServiceManager;
 import org.tron.common.logsfilter.EventPluginConfig;
 import org.tron.common.logsfilter.FilterQuery;
 import org.tron.common.logsfilter.TriggerConfig;
@@ -1312,59 +1309,7 @@ public class Args extends CommonParameter {
       return ret;
     }
     List<String> list = config.getStringList(path);
-    if (list.isEmpty()) {
-      return ret;
-    }
-
-    // Collect entries whose host part is a domain name (not an IP literal).
-    List<String> domainEntries = new ArrayList<>();
-    for (String configString : list) {
-      String host = NetUtil.parseInetSocketAddress(configString).getHostString();
-      if (!NetUtil.validIpV4(host) && !NetUtil.validIpV6(host)) {
-        domainEntries.add(configString);
-      }
-    }
-
-    // Resolve domain names: spin up a thread pool only when there are multiple domains
-    Map<String, InetSocketAddress> domainResolved = new HashMap<>();
-    if (domainEntries.size() > 1) {
-      String poolName = "args-dns-lookup";
-      ExecutorService dnsPool = ExecutorServiceManager
-          .newFixedThreadPool(poolName, domainEntries.size(), true);
-      List<Future<InetSocketAddress>> futures = new ArrayList<>(domainEntries.size());
-      for (String entry : domainEntries) {
-        futures.add(dnsPool.submit(() -> resolveInetSocketAddress(entry)));
-      }
-      for (int i = 0; i < domainEntries.size(); i++) {
-        String entry = domainEntries.get(i);
-        try {
-          domainResolved.put(entry, futures.get(i).get());
-        } catch (InterruptedException e) {
-          Thread.currentThread().interrupt();
-          logger.warn("DNS lookup interrupted for: {}", entry);
-        } catch (ExecutionException e) {
-          logger.warn("Failed to resolve address, skip: {}", entry);
-        }
-      }
-      ExecutorServiceManager.shutdownAndAwaitTermination(dnsPool, poolName);
-    } else if (domainEntries.size() == 1) {
-      String entry = domainEntries.get(0);
-      domainResolved.put(entry, resolveInetSocketAddress(entry));
-    }
-
-    // Build the result list preserving the original config order.
-    for (String configString : list) {
-      InetSocketAddress inetSocketAddress;
-      InetSocketAddress parsed = NetUtil.parseInetSocketAddress(configString);
-      if (NetUtil.validIpV4(parsed.getHostString()) || NetUtil.validIpV6(parsed.getHostString())) {
-        inetSocketAddress = parsed;
-      } else {
-        inetSocketAddress = domainResolved.get(configString);
-      }
-
-      if (inetSocketAddress == null) {
-        continue;
-      }
+    for (InetSocketAddress inetSocketAddress : InetUtil.getInetSocketAddressList(list)) {
       if (filter) {
         String ip = inetSocketAddress.getAddress().getHostAddress();
         int port = inetSocketAddress.getPort();
@@ -1379,24 +1324,6 @@ public class Args extends CommonParameter {
       }
     }
     return ret;
-  }
-
-  /**
-   * Resolves a {@code domain:port} address string to an {@link InetSocketAddress} via DNS.
-   */
-  private static InetSocketAddress resolveInetSocketAddress(String configString) {
-    InetSocketAddress parsed = NetUtil.parseInetSocketAddress(configString);
-    String host = parsed.getHostString();
-    int port = parsed.getPort();
-    InetAddress address = LookUpTxt.lookUpIp(host, true);
-    if (address == null) {
-      address = LookUpTxt.lookUpIp(host, false);
-    }
-    if (address == null) {
-      return null;
-    }
-    logger.info("Resolve {} to {}", host, address.getHostAddress());
-    return new InetSocketAddress(address, port);
   }
 
   public static List<InetAddress> getInetAddress(
@@ -1738,16 +1665,9 @@ public class Args extends CommonParameter {
 
   private static void checkBackupMembers() {
     for (String member : PARAMETER.backupMembers) {
-      if (NetUtil.validIpV4(member) || NetUtil.validIpV6(member)) {
-        continue;
-      }
-      // Determine whether a domain name can be resolved to an IP address.
-      InetAddress address = LookUpTxt.lookUpIp(member, true);
-      if (address == null) {
-        address = LookUpTxt.lookUpIp(member, false);
-      }
-      if (address == null) {
-        throw new TronError("Failed to resolve backup member domain: " + member,
+      InetAddress inetAddress = resolveInetAddress(member);
+      if (inetAddress == null) {
+        throw new TronError("Failed to resolve backup member: " + member,
             TronError.ErrCode.PARAMETER_INIT);
       }
     }
