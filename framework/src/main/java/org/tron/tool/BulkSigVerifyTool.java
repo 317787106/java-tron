@@ -31,7 +31,7 @@ import org.tron.core.config.args.Args;
 @Slf4j(topic = "tool")
 public class BulkSigVerifyTool {
 
-  private static final long MAX_BLOCKS = 10_000L;
+  private static final long MAX_BLOCKS = 20_000L;
   private static final int DEFAULT_TOP_K = 20;
 
   private static class TxRecord {
