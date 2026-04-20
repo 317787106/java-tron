@@ -32,7 +32,7 @@ import org.tron.core.config.args.Args;
 public class BulkSigVerifyTool {
 
   private static final long MAX_BLOCKS = 20_000L;
-  private static final int DEFAULT_TOP_K = 20;
+  private static final int DEFAULT_TOP_K = 100;
 
   private static class TxRecord {
     final long elapsedMs;
