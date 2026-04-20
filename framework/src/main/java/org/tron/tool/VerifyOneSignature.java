@@ -15,8 +15,8 @@ public class VerifyOneSignature {
       byte[] rawData = ByteArray.fromHexString(
           "0a021e332208cd217ab69a62384940e0c0d0c3da335a68080112640a2d747970652e676f6f676c65617"
               + "069732e636f6d2f70726f746f636f6c2e5472616e73666572436f6e747261637412330a15416554da5"
-              + "79ea967a38dc1972adf49abd0bc0b49781215411f8e5b7807c7bc4515e83bd042b3f22ae5c004fa1880"
-              + "b6dc057080ecccc3da33");
+              + "79ea967a38dc1972adf49abd0bc0b49781215411f8e5b7807c7bc4515e83bd042b3f22ae5c004fa188"
+              + "0b6dc057080ecccc3da33");
       long t1 = System.currentTimeMillis();
       System.out.println("[1] fromHexString(rawData): " + (t1 - t0) + " ms");
 
