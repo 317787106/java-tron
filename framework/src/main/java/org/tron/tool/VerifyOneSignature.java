@@ -38,10 +38,8 @@ public class VerifyOneSignature {
       System.out.println("[4] Rsv.fromSignature: " + (t1 - t0) + " ms");
 
       t0 = System.currentTimeMillis();
-      byte[] s = new byte[32];
       String sigBase64 = ECKey.ECDSASignature
-          .fromComponents(rsv.getR(), s, rsv.getV()).toBase64();
-      //.fromComponents(rsv.getR(), rsv.getS(), rsv.getV()).toBase64();
+          .fromComponents(rsv.getR(), rsv.getS(), rsv.getV()).toBase64();
       t1 = System.currentTimeMillis();
       System.out.println("[5] ECDSASignature.fromComponents+toBase64: " + (t1 - t0) + " ms");
 
