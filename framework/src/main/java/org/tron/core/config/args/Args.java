@@ -74,7 +74,6 @@ import org.tron.core.config.Parameter.NodeConstant;
 import org.tron.core.exception.TronError;
 import org.tron.core.store.AccountStore;
 import org.tron.p2p.P2pConfig;
-import org.tron.p2p.dns.lookup.LookUpTxt;
 import org.tron.p2p.dns.update.DnsType;
 import org.tron.p2p.dns.update.PublishConfig;
 import org.tron.p2p.utils.NetUtil;
@@ -1302,14 +1301,12 @@ public class Args extends CommonParameter {
     return initialization;
   }
 
+
   public static List<InetSocketAddress> getInetSocketAddress(
       final com.typesafe.config.Config config, String path, boolean filter) {
     List<InetSocketAddress> ret = new ArrayList<>();
-    if (!config.hasPath(path)) {
-      return ret;
-    }
-    List<String> list = config.getStringList(path);
-    for (InetSocketAddress inetSocketAddress : InetUtil.getInetSocketAddressList(list)) {
+    List<InetSocketAddress> socketAddressList = getInetSockerAddress(config, path);
+    for (InetSocketAddress inetSocketAddress : socketAddressList) {
       if (filter) {
         String ip = inetSocketAddress.getAddress().getHostAddress();
         int port = inetSocketAddress.getPort();
@@ -1326,15 +1323,27 @@ public class Args extends CommonParameter {
     return ret;
   }
 
+  private static List<InetSocketAddress> getInetSockerAddress(
+      final com.typesafe.config.Config config, String path) {
+    List<InetSocketAddress> socketAddressList = new ArrayList<>();
+    if (!config.hasPath(path)) {
+      return socketAddressList;
+    }
+    List<String> list = config.getStringList(path);
+    try {
+      socketAddressList = InetUtil.resolveInetSocketAddressList(list);
+    } catch (RuntimeException e) {
+      throw new TronError(String.format("config %s contains %s", path, e.getMessage()),
+          TronError.ErrCode.PARAMETER_INIT);
+    }
+    return socketAddressList;
+  }
+
   public static List<InetAddress> getInetAddress(
       final com.typesafe.config.Config config, String path) {
     List<InetAddress> ret = new ArrayList<>();
-    if (!config.hasPath(path)) {
-      return ret;
-    }
-    List<String> list = config.getStringList(path);
-    for (String configString : list) {
-      InetSocketAddress inetSocketAddress = NetUtil.parseInetSocketAddress(configString);
+    List<InetSocketAddress> socketAddressList = getInetSockerAddress(config, path);
+    for (InetSocketAddress inetSocketAddress : socketAddressList) {
       ret.add(inetSocketAddress.getAddress());
     }
     return ret;
