@@ -69,6 +69,7 @@ task protoLint {
             "core/contract/common.proto:ResourceCode",
             "core/contract/smart_contract.proto:SmartContract.ABI.Entry.EntryType",
             "core/contract/smart_contract.proto:SmartContract.ABI.Entry.StateMutabilityType",
+            "core/common.proto:ResourceCode",
             "core/Tron.proto:AccountType",
             "core/Tron.proto:ReasonCode",
             "core/Tron.proto:Proposal.State",

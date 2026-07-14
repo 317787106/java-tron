@@ -6,7 +6,7 @@ option java_package = "org.tron.protos.contract"; //Specify the name of the pack
 //option java_outer_classname = "FreezeBalanceContract"; //Specify the class name of the generated Java file
 option go_package = "github.com/tronprotocol/protocol/core/contract";
 
-import "core/contract/common.proto";
+import "core/common.proto";
 
 message FreezeBalanceContract {
   bytes owner_address = 1;

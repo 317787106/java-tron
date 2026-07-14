@@ -2,7 +2,7 @@ syntax = "proto3";
 
 import "google/protobuf/any.proto";
 import "core/Discover.proto";
-import "core/contract/common.proto";
+import "core/common.proto";
 
 package protocol;
 
