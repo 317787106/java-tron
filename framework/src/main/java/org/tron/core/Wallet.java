@@ -202,6 +202,7 @@ import org.tron.core.store.StoreFactory;
 import org.tron.core.store.VotesStore;
 import org.tron.core.store.WitnessStore;
 import org.tron.core.utils.TransactionUtil;
+import org.tron.core.vm.config.VMConfig;
 import org.tron.core.vm.program.Program;
 import org.tron.core.zen.ShieldedTRC20ParametersBuilder;
 import org.tron.core.zen.ShieldedTRC20ParametersBuilder.ShieldedTRC20ParametersType;
@@ -228,6 +229,8 @@ import org.tron.protos.Protocol.MarketOrderList;
 import org.tron.protos.Protocol.MarketOrderPairList;
 import org.tron.protos.Protocol.MarketPrice;
 import org.tron.protos.Protocol.MarketPriceList;
+import org.tron.protos.Protocol.Permission;
+import org.tron.protos.Protocol.Permission.PermissionType;
 import org.tron.protos.Protocol.Proposal;
 import org.tron.protos.Protocol.Transaction;
 import org.tron.protos.Protocol.Transaction.Contract;
@@ -628,6 +631,17 @@ public class Wallet {
 
   public TransactionApprovedList getTransactionApprovedList(Transaction trx) {
     TransactionApprovedList.Builder tswBuilder = TransactionApprovedList.newBuilder();
+    TransactionApprovedList.Result.Builder resultBuilder = TransactionApprovedList.Result
+        .newBuilder();
+    if (trx.getSignatureCount() > chainBaseManager.getDynamicPropertiesStore()
+        .getTotalSignNum()) {
+      resultBuilder.setCode(TransactionApprovedList.Result.response_code.OTHER_ERROR);
+      resultBuilder.setMessage("too many signatures");
+      tswBuilder.setResult(resultBuilder);
+      return tswBuilder.build();
+    }
+
+    trx = TransactionUtil.truncateSignatures(trx);
     TransactionExtention.Builder trxExBuilder = TransactionExtention.newBuilder();
     trxExBuilder.setTransaction(trx);
     trxExBuilder.setTxid(ByteString.copyFrom(Sha256Hash.hash(CommonParameter
@@ -636,8 +650,6 @@ public class Wallet {
     retBuilder.setResult(true).setCode(response_code.SUCCESS);
     trxExBuilder.setResult(retBuilder);
     tswBuilder.setTransaction(trxExBuilder);
-    TransactionApprovedList.Result.Builder resultBuilder = TransactionApprovedList.Result
-        .newBuilder();
 
     if (trx.getRawData().getContractCount() == 0) {
       resultBuilder.setCode(TransactionApprovedList.Result.response_code.OTHER_ERROR);
@@ -650,21 +662,26 @@ public class Wallet {
         if (account == null) {
           throw new PermissionException("Account does not exist!");
         }
+        int permissionId = contract.getPermissionId();
+        Permission permission = account.getPermissionById(permissionId);
+        if (permission == null) {
+          throw new PermissionException("Permission for this, does not exist!");
+        }
+        if (permissionId != 0) {
+          if (permission.getType() != PermissionType.Active) {
+            throw new PermissionException("Permission type is wrong!");
+          }
+          //check operations
+          if (!WalletUtil.checkPermissionOperations(permission, contract)) {
+            throw new PermissionException("Permission denied!");
+          }
+        }
 
         if (trx.getSignatureCount() > 0) {
-          List<ByteString> approveList = new ArrayList<ByteString>();
+          List<ByteString> approveList = new ArrayList<>();
           byte[] hash = Sha256Hash.hash(CommonParameter
               .getInstance().isECKeyCryptoEngine(), trx.getRawData().toByteArray());
-          for (ByteString sig : trx.getSignatureList()) {
-            if (sig.size() < 65) {
-              throw new SignatureFormatException(
-                  "Signature size is " + sig.size());
-            }
-            String base64 = TransactionCapsule.getBase64FromByteString(sig);
-            byte[] address = SignUtils.signatureToAddress(hash, base64, Args.getInstance()
-                .isECKeyCryptoEngine());
-            approveList.add(ByteString.copyFrom(address)); //out put approve list.
-          }
+          TransactionCapsule.checkWeight(permission, trx.getSignatureList(), hash, approveList);
           tswBuilder.addAllApprovedList(approveList);
         }
         resultBuilder.setCode(TransactionApprovedList.Result.response_code.SUCCESS);
@@ -3141,8 +3158,14 @@ public class Wallet {
         StoreFactory.getInstance(), true, false);
     VMActuator vmActuator = new VMActuator(true);
 
-    vmActuator.validate(context);
-    vmActuator.execute(context);
+    try {
+      vmActuator.validate(context);
+      vmActuator.execute(context);
+    } finally {
+      // constant call runs on a pooled RPC worker; drop its thread-local VM config view so it
+      // can never leak into a later (block/broadcast) execution on the same thread.
+      VMConfig.clearLocalSnapshot();
+    }
 
     ProgramResult result = context.getProgramResult();
     if (!isEstimating && result.getException() != null
