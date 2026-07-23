@@ -4,6 +4,7 @@ import java.io.File;
 import java.util.ArrayList;
 import java.util.BitSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
@@ -20,6 +21,7 @@ import org.tron.core.capsule.TransactionRetCapsule;
 import org.tron.core.exception.BadItemException;
 import org.tron.core.exception.EventBloomException;
 import org.tron.plugins.utils.db.DBInterface;
+import org.tron.plugins.utils.db.DBIterator;
 import org.tron.plugins.utils.db.DbTool;
 import picocli.CommandLine;
 
@@ -40,14 +42,15 @@ public class DbBackfillBloom implements Callable<Integer> {
       description = "Database directory path. Default: ${DEFAULT-VALUE}", order = 1)
   private String databaseDirectory;
 
-  @CommandLine.Option(names = {"--start-block", "-s"}, required = true,
-      description = "Start block number for backfill", order = 2)
+  @CommandLine.Option(names = {"--start-block", "-s"},
+      description = "Start block number for backfill(default: earliest block)", order = 2)
   private long startBlock;
 
   @CommandLine.Option(names = {"--end-block", "-e"},
       description = "End block number for backfill (default: latest block)", order = 3)
   private Long endBlock;
 
+  // sames as SectionBloomStore.BLOCK_PER_SECTION
   private static final int BLOCKS_PER_SECTION = 2048;
 
   @CommandLine.Option(names = {"--max-concurrency", "-c"}, defaultValue = "8",
@@ -71,6 +74,9 @@ public class DbBackfillBloom implements Callable<Integer> {
   // Total number of bloom writes
   private final AtomicLong totalBloomWrites = new AtomicLong(0);
 
+  private DBInterface transactionRetDb;
+  private DBInterface sectionBloomDb;
+
   private static class SectionRange {
 
     final long start;
@@ -92,6 +98,7 @@ public class DbBackfillBloom implements Callable<Integer> {
   @Override
   public Integer call() {
     if (help) {
+      logger.info("Displaying backfill-bloom help");
       spec.commandLine().usage(System.out);
       return 0;
     }
@@ -109,22 +116,31 @@ public class DbBackfillBloom implements Callable<Integer> {
 
       // Determine end block if not specified
       if (endBlock == null) {
-        endBlock = getLatestBlockNumber();
+        endBlock = getLatestSolidityBlockNumber();
         if (endBlock == null || endBlock == 0) {
-          spec.commandLine().getErr().println("Failed to determine latest block number");
+          printError("Failed to determine latest block number");
           return 1;
         }
       }
 
+      Long minNonZeroBlockNumber = getMinNonZeroBlockNumber();
+      if (minNonZeroBlockNumber != null && startBlock < minNonZeroBlockNumber) {
+        printInfo(
+            "Start block %d is earlier than the first available transaction result block %d; "
+                + "using %d instead.",
+            startBlock, minNonZeroBlockNumber, minNonZeroBlockNumber);
+        startBlock = minNonZeroBlockNumber;
+      }
+
       // Validate block range
       if (endBlock < startBlock) {
-        spec.commandLine().getErr().println("End block must be >= start block");
+        printError("End block %d must be greater than or equal to start block %d",
+            endBlock, startBlock);
         return 1;
       }
 
       long totalBlocks = endBlock - startBlock + 1;
-      spec.commandLine().getOut().printf(
-          "Starting SectionBloom backfill for blocks %d to %d (%d blocks)%n",
+      printInfo("Starting SectionBloom backfill for blocks %d to %d (%d blocks)",
           startBlock, endBlock, totalBlocks);
 
       // Process blocks with progress bar
@@ -138,8 +154,7 @@ public class DbBackfillBloom implements Callable<Integer> {
       return result;
 
     } catch (Exception e) {
-      logger.error("Backfill failed", e);
-      spec.commandLine().getErr().println("Backfill failed: " + e.getMessage());
+      printError(e, "Backfill failed");
       return 1;
     } finally {
       DbTool.close();
@@ -148,19 +163,18 @@ public class DbBackfillBloom implements Callable<Integer> {
 
   private boolean validateParameters() {
     if (startBlock < 0) {
-      spec.commandLine().getErr().println("Start block must be >= 0");
+      printError("Start block %d must be greater than or equal to zero", startBlock);
       return false;
     }
 
     if (maxConcurrency <= 0 || maxConcurrency > 128) {
-      spec.commandLine().getErr().println("Max concurrency must be between 1 and 128");
+      printError("Max concurrency %d must be between 1 and 128", maxConcurrency);
       return false;
     }
 
     File dbDir = new File(databaseDirectory);
     if (!dbDir.exists() || !dbDir.isDirectory()) {
-      spec.commandLine().getErr().println("Database directory does not exist: "
-          + databaseDirectory);
+      printError("Database directory does not exist or is not a directory");
       return false;
     }
 
@@ -172,25 +186,22 @@ public class DbBackfillBloom implements Callable<Integer> {
       // Open both DBs here, single-threaded, before any worker thread starts. DbTool.getDB
       // caches handles in a ConcurrentMap but its check-then-open is not atomic, so two
       // threads opening the same LevelDB dir concurrently would hit the exclusive-lock error.
-      // Pre-warming the cache means the worker threads in processSection() only ever read the
-      // cached handles. Do NOT remove this pre-warm.
-      DbTool.getDB(databaseDirectory, "transactionRetStore");
-      DbTool.getDB(databaseDirectory, "section-bloom");
+      // Keep these handles for all worker threads instead of opening the same DB again.
+      transactionRetDb = DbTool.getDB(databaseDirectory, "transactionRetStore");
+      sectionBloomDb = DbTool.getDB(databaseDirectory, "section-bloom");
 
-      spec.commandLine().getOut().println("Database connections initialized successfully");
+      printInfo("Database connections initialized successfully");
       return true;
     } catch (Exception e) {
-      logger.error("Failed to initialize database connections: {}", e.getMessage());
-      spec.commandLine().getErr().println("Failed to initialize database connections: "
-          + e.getMessage());
+      printError(e, "Failed to initialize database connections");
       return false;
     }
   }
 
-  private Long getLatestBlockNumber() {
+  private Long getLatestSolidityBlockNumber() {
     try {
       DBInterface propertiesDb = DbTool.getDB(databaseDirectory, "properties");
-      byte[] latestBlockKey = "latest_block_header_number".getBytes();
+      byte[] latestBlockKey = "LATEST_SOLIDIFIED_BLOCK_NUM".getBytes();
       byte[] latestBlockBytes = propertiesDb.get(latestBlockKey);
 
       if (latestBlockBytes != null) {
@@ -198,9 +209,23 @@ public class DbBackfillBloom implements Callable<Integer> {
       }
       return null;
     } catch (Exception e) {
-      logger.error("Failed to get latest block number: {}", e.getMessage());
+      logger.error("Failed to get latest block number", e);
       return null;
     }
+  }
+
+  private Long getMinNonZeroBlockNumber() {
+    try {
+      try (DBIterator iterator = transactionRetDb.iterator()) {
+        iterator.seek(ByteArray.fromLong(1));
+        if (iterator.hasNext()) {
+          return ByteArray.toLong(iterator.getKey());
+        }
+      }
+    } catch (Exception e) {
+      logger.error("Failed to get minimum non-zero block number", e);
+    }
+    return null;
   }
 
   private int processBlocks() {
@@ -215,8 +240,7 @@ public class DbBackfillBloom implements Callable<Integer> {
 
     try (ProgressBar pb = new ProgressBar("Scanning blocks for SectionBloom backfill",
         totalBlocks)) {
-      spec.commandLine().getOut().printf("Processing %d sections with %d threads\n",
-          sectionRanges.size(), maxConcurrency);
+      printInfo("Processing %d sections with %d threads", sectionRanges.size(), maxConcurrency);
       // Submit all section tasks to the thread pool
       for (SectionRange range : sectionRanges) {
         final long finalSectionStart = range.start;
@@ -226,8 +250,8 @@ public class DbBackfillBloom implements Callable<Integer> {
           try {
             processSection(finalSectionStart, finalSectionEnd, pb);
           } catch (Exception e) {
-            spec.commandLine().getOut().printf("Error processing section %d to %d, %s\n",
-                finalSectionStart, finalSectionEnd, e);
+            printError(e, "Error processing section %d to %d",
+                finalSectionStart, finalSectionEnd);
           }
         }, executor);
 
@@ -240,15 +264,14 @@ public class DbBackfillBloom implements Callable<Integer> {
 
       try {
         allTasks.get();
-        spec.commandLine().getOut().printf("All %d batch tasks completed\n", futures.size());
+        printInfo("All %d batch tasks completed", futures.size());
       } catch (Exception e) {
-        spec.commandLine().getOut().printf("Error waiting for tasks to complete: %s\n",
-            e.getMessage());
+        printError(e, "Error waiting for backfill tasks to complete");
         return 1;
       }
 
     } catch (Exception e) {
-      spec.commandLine().getOut().printf("Error in progress tracking %s\n", e);
+      printError(e, "Error in progress tracking");
       return 1;
     } finally {
       ExecutorServiceManager.shutdownAndAwaitTermination(executor, "backfill-bloom");
@@ -287,28 +310,17 @@ public class DbBackfillBloom implements Callable<Integer> {
   }
 
   private void processSection(long sectionStart, long sectionEnd, ProgressBar pb) {
-    long sectionId = sectionStart / BLOCKS_PER_SECTION;
-    try {
-      // Cache hit only: these handles were pre-warmed single-threaded in initializeDatabase()
-      // to avoid a concurrent-open race on the same LevelDB dir.
-      DBInterface transactionRetDb = DbTool.getDB(databaseDirectory, "transactionRetStore");
-      DBInterface sectionBloomDb = DbTool.getDB(databaseDirectory, "section-bloom");
-
-      for (long blockNum = sectionStart; blockNum <= sectionEnd; blockNum++) {
-        try {
-          processBlock(blockNum, transactionRetDb, sectionBloomDb);
-          successfulBlocks.incrementAndGet();
-        } catch (Exception e) {
-          spec.commandLine().getOut().printf("Error processing block %d, %s\n", blockNum, e);
-          errorCount.incrementAndGet();
-        } finally {
-          processedBlocks.incrementAndGet();
-          pb.step();
-        }
+    for (long blockNum = sectionStart; blockNum <= sectionEnd; blockNum++) {
+      try {
+        processBlock(blockNum, transactionRetDb, sectionBloomDb);
+        successfulBlocks.incrementAndGet();
+      } catch (Exception e) {
+        printError(e, "Error processing block %d", blockNum);
+        errorCount.incrementAndGet();
+      } finally {
+        processedBlocks.incrementAndGet();
+        pb.step();
       }
-    } catch (Exception e) {
-      spec.commandLine().getOut().printf("Error in section %d processing: %s\n", sectionId, e);
-      throw new RuntimeException(e);
     }
   }
 
@@ -323,26 +335,20 @@ public class DbBackfillBloom implements Callable<Integer> {
       return;
     }
 
-    try {
-      TransactionRetCapsule transactionRetCapsule = new TransactionRetCapsule(transactionRetData);
+    TransactionRetCapsule transactionRetCapsule = new TransactionRetCapsule(transactionRetData);
 
-      // Create bloom filter for this block using the same logic as SectionBloomStore
-      Bloom blockBloom = Bloom.createBloom(transactionRetCapsule);
+    // Create bloom filter for this block using the same logic as SectionBloomStore
+    Bloom blockBloom = Bloom.createBloom(transactionRetCapsule);
 
-      if (blockBloom != null) {
-        // Extract bit positions from bloom filter
-        List<Integer> bitList = extractBitPositions(blockBloom);
+    if (blockBloom != null) {
+      // Extract bit positions from bloom filter
+      List<Integer> bitList = extractBitPositions(blockBloom);
 
-        if (!CollectionUtils.isEmpty(bitList)) {
-          // Write to section bloom store using the same logic as SectionBloomStore.write
-          writeSectionBloom(blockNum, bitList, sectionBloomDb);
-          blocksWithLogs.incrementAndGet();
-        }
+      if (!CollectionUtils.isEmpty(bitList)) {
+        // Write to section bloom store using the same logic as SectionBloomStore.write
+        writeSectionBloom(blockNum, bitList, sectionBloomDb);
+        blocksWithLogs.incrementAndGet();
       }
-    } catch (Exception e) {
-      spec.commandLine().getOut().printf("Error processing block %d: %s\n", blockNum,
-          e.getMessage());
-      throw e;
     }
   }
 
@@ -418,46 +424,68 @@ public class DbBackfillBloom implements Callable<Integer> {
   }
 
   private void printSummary(long duration) {
-    spec.commandLine().getOut().println("\n=== Backfill Summary ===");
+    spec.commandLine().getOut().println();
+    printInfo("=== Backfill Summary ===");
 
-    spec.commandLine().getOut().printf("Total blocks scanned: %d%n", processedBlocks.get());
-    spec.commandLine().getOut().printf("Successfully processed: %d%n", successfulBlocks.get());
-    spec.commandLine().getOut().printf("Blocks with logs: %d%n", blocksWithLogs.get());
-    spec.commandLine().getOut().printf("Errors encountered: %d%n", errorCount.get());
-    spec.commandLine().getOut().printf("Duration: %d seconds%n", duration);
+    printInfo("Total blocks scanned: %d", processedBlocks.get());
+    printInfo("Successfully processed: %d", successfulBlocks.get());
+    printInfo("Blocks with logs: %d", blocksWithLogs.get());
+    printInfo("Errors encountered: %d", errorCount.get());
+    printInfo("Duration: %d seconds", duration);
 
     // Success rate statistics
     if (processedBlocks.get() > 0) {
       double successRate = (double) successfulBlocks.get() / processedBlocks.get() * 100;
       double logRate = (double) blocksWithLogs.get() / processedBlocks.get() * 100;
-      spec.commandLine().getOut().printf("Success rate: %.2f%% (%d/%d)%n",
+      printInfo("Success rate: %.2f%% (%d/%d)",
           successRate, successfulBlocks.get(), processedBlocks.get());
-      spec.commandLine().getOut().printf("Blocks with logs rate: %.2f%% (%d/%d)%n",
+      printInfo("Blocks with logs rate: %.2f%% (%d/%d)",
           logRate, blocksWithLogs.get(), processedBlocks.get());
     }
 
     // Performance statistics
-    spec.commandLine().getOut().printf("Total bloom writes: %d%n", totalBloomWrites.get());
-    spec.commandLine().getOut().printf("Max concurrency used: %d threads%n", maxConcurrency);
-    spec.commandLine().getOut().printf("Section-based processing: No locks needed%n");
+    printInfo("Total bloom writes: %d", totalBloomWrites.get());
+    printInfo("Max concurrency used: %d threads", maxConcurrency);
+    printInfo("Section-based processing: No locks needed");
 
     if (duration > 0) {
-      spec.commandLine().getOut().printf("Scanning rate: %.2f blocks/second%n",
-          (double) processedBlocks.get() / duration);
-      spec.commandLine().getOut().printf("Processing rate: %.2f blocks/second%n",
-          (double) successfulBlocks.get() / duration);
+      printInfo("Scanning rate: %.2f blocks/second", (double) processedBlocks.get() / duration);
+      printInfo("Processing rate: %.2f blocks/second", (double) successfulBlocks.get() / duration);
       if (totalBloomWrites.get() > 0) {
-        spec.commandLine().getOut().printf("Bloom write rate: %.2f writes/second%n",
+        printInfo("Bloom write rate: %.2f writes/second",
             (double) totalBloomWrites.get() / duration);
       }
     }
 
     // Result judgment
     if (errorCount.get() == 0) {
-      spec.commandLine().getOut().println("✓ Backfill completed successfully!");
+      printInfo("✓ Backfill completed successfully!");
     } else {
-      spec.commandLine().getOut().printf("⚠ Backfill completed with %d errors.%n",
-          errorCount.get());
+      printWarning("⚠ Backfill completed with %d errors.", errorCount.get());
     }
+  }
+
+  private void printInfo(String format, Object... args) {
+    String message = String.format(Locale.ROOT, format, args);
+    logger.info(message);
+    spec.commandLine().getOut().println(message);
+  }
+
+  private void printWarning(String format, Object... args) {
+    String message = String.format(Locale.ROOT, format, args);
+    logger.warn(message);
+    spec.commandLine().getOut().println(message);
+  }
+
+  private void printError(String format, Object... args) {
+    String message = String.format(Locale.ROOT, format, args);
+    logger.error(message);
+    spec.commandLine().getErr().println(message);
+  }
+
+  private void printError(Throwable cause, String format, Object... args) {
+    String message = String.format(Locale.ROOT, format, args);
+    logger.error(message, cause);
+    spec.commandLine().getErr().println(message);
   }
 }

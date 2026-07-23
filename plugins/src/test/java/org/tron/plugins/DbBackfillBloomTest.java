@@ -1,11 +1,14 @@
 package org.tron.plugins;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import static org.mockito.AdditionalMatchers.aryEq;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.io.ByteArrayOutputStream;
@@ -23,6 +26,7 @@ import org.junit.rules.TemporaryFolder;
 import org.mockito.MockedStatic;
 import org.tron.common.utils.ByteArray;
 import org.tron.plugins.utils.db.DBInterface;
+import org.tron.plugins.utils.db.DBIterator;
 import org.tron.plugins.utils.db.DbTool;
 import picocli.CommandLine;
 
@@ -297,7 +301,134 @@ public class DbBackfillBloomTest {
   }
 
   @Test
-  public void testFailedToGetLatestBlockNumber() throws Exception {
+  public void testAdjustsStartBlockToMinimumNonZeroTransactionResultBlock() throws Exception {
+    DBInterface transactionRetDb = mock(DBInterface.class);
+    DBInterface sectionBloomDb = mock(DBInterface.class);
+    DBIterator iterator = mock(DBIterator.class);
+
+    dbToolMock.when(() -> DbTool.getDB(anyString(), anyString()))
+        .thenAnswer(invocation -> {
+          String dbName = invocation.getArgument(1);
+          switch (dbName) {
+            case "transactionRetStore":
+              return transactionRetDb;
+            case "section-bloom":
+              return sectionBloomDb;
+            default:
+              return mock(DBInterface.class);
+          }
+        });
+
+    when(transactionRetDb.iterator()).thenReturn(iterator);
+    when(iterator.hasNext()).thenReturn(true);
+    when(iterator.getKey()).thenReturn(ByteArray.fromLong(10L));
+    when(transactionRetDb.get(any(byte[].class))).thenReturn(null);
+
+    StringWriter out = new StringWriter();
+    CommandLine cmd = new CommandLine(new Toolkit());
+    cmd.setOut(new PrintWriter(out));
+
+    String[] args = new String[] {
+        "db", "backfill-bloom",
+        "-d", databaseDirectory,
+        "-s", "0",
+        "-e", "12"
+    };
+
+    assertEquals(0, cmd.execute(args));
+    assertTrue(out.toString().contains(
+        "Start block 0 is earlier than the first available transaction result block 10"));
+    assertTrue(out.toString().contains(
+        "Starting SectionBloom backfill for blocks 10 to 12 (3 blocks)"));
+    verify(iterator).seek(aryEq(ByteArray.fromLong(1)));
+    verify(iterator).close();
+  }
+
+  @Test
+  public void testKeepsStartBlockWhenTransactionResultStoreIsEmpty() throws Exception {
+    DBInterface transactionRetDb = mock(DBInterface.class);
+    DBInterface sectionBloomDb = mock(DBInterface.class);
+    DBIterator iterator = mock(DBIterator.class);
+
+    dbToolMock.when(() -> DbTool.getDB(anyString(), anyString()))
+        .thenAnswer(invocation -> {
+          String dbName = invocation.getArgument(1);
+          switch (dbName) {
+            case "transactionRetStore":
+              return transactionRetDb;
+            case "section-bloom":
+              return sectionBloomDb;
+            default:
+              return mock(DBInterface.class);
+          }
+        });
+
+    when(transactionRetDb.iterator()).thenReturn(iterator);
+    when(iterator.hasNext()).thenReturn(false);
+    when(transactionRetDb.get(any(byte[].class))).thenReturn(null);
+
+    StringWriter out = new StringWriter();
+    CommandLine cmd = new CommandLine(new Toolkit());
+    cmd.setOut(new PrintWriter(out));
+
+    String[] args = new String[] {
+        "db", "backfill-bloom",
+        "-d", databaseDirectory,
+        "-s", "5",
+        "-e", "6"
+    };
+
+    assertEquals(0, cmd.execute(args));
+    assertTrue(out.toString().contains(
+        "Starting SectionBloom backfill for blocks 5 to 6 (2 blocks)"));
+    verify(iterator).seek(aryEq(ByteArray.fromLong(1)));
+    verify(iterator).close();
+  }
+
+  @Test
+  public void testProcessingErrorIsWrittenToStderr() throws Exception {
+    DBInterface transactionRetDb = mock(DBInterface.class);
+    DBInterface sectionBloomDb = mock(DBInterface.class);
+    DBIterator iterator = mock(DBIterator.class);
+
+    dbToolMock.when(() -> DbTool.getDB(anyString(), anyString()))
+        .thenAnswer(invocation -> {
+          String dbName = invocation.getArgument(1);
+          switch (dbName) {
+            case "transactionRetStore":
+              return transactionRetDb;
+            case "section-bloom":
+              return sectionBloomDb;
+            default:
+              return mock(DBInterface.class);
+          }
+        });
+
+    when(transactionRetDb.iterator()).thenReturn(iterator);
+    when(iterator.hasNext()).thenReturn(false);
+    when(transactionRetDb.get(any(byte[].class)))
+        .thenThrow(new RuntimeException("read failed"));
+
+    StringWriter out = new StringWriter();
+    StringWriter err = new StringWriter();
+    CommandLine cmd = new CommandLine(new Toolkit());
+    cmd.setOut(new PrintWriter(out));
+    cmd.setErr(new PrintWriter(err));
+
+    String[] args = new String[] {
+        "db", "backfill-bloom",
+        "-d", databaseDirectory,
+        "-s", "1",
+        "-e", "1"
+    };
+
+    assertEquals(1, cmd.execute(args));
+    assertTrue(err.toString().contains("Error processing block 1"));
+    assertFalse(out.toString().contains("Error processing block 1"));
+  }
+
+  @Test
+  public void testFailedToGetLatestSolidityBlockNumber() throws Exception {
     // Mock database interfaces
     DBInterface transactionRetDb = mock(DBInterface.class);
     DBInterface sectionBloomDb = mock(DBInterface.class);
