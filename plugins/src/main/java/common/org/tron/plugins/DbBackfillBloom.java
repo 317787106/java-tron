@@ -1,6 +1,8 @@
 package org.tron.plugins;
 
 import java.io.File;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.BitSet;
 import java.util.List;
@@ -13,6 +15,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import lombok.extern.slf4j.Slf4j;
 import me.tongfei.progressbar.ProgressBar;
 import org.apache.commons.collections4.CollectionUtils;
+import org.rocksdb.RocksDBException;
 import org.tron.common.bloom.Bloom;
 import org.tron.common.es.ExecutorServiceManager;
 import org.tron.common.utils.ByteArray;
@@ -47,11 +50,15 @@ public class DbBackfillBloom implements Callable<Integer> {
   private long startBlock;
 
   @CommandLine.Option(names = {"--end-block", "-e"},
-      description = "End block number for backfill (default: latest block)", order = 3)
-  private Long endBlock;
+      description = "End block number for backfill (default: latest solidity block)", order = 3)
+  private long endBlock;
 
   // sames as SectionBloomStore.BLOCK_PER_SECTION
   private static final int BLOCKS_PER_SECTION = 2048;
+  private static final String PROPERTIES_DB_NAME = "properties";
+  private static final String TRANSACTION_RET_DB_NAME = "transactionRetStore";
+  private static final String SECTION_BLOOM_DB_NAME = "section-bloom";
+  private static final String LATEST_SOLIDIFIED_BLOCK_NUM = "LATEST_SOLIDIFIED_BLOCK_NUM";
 
   @CommandLine.Option(names = {"--max-concurrency", "-c"}, defaultValue = "8",
       description = "Maximum concurrency for processing. Default: ${DEFAULT-VALUE}",
@@ -115,21 +122,44 @@ public class DbBackfillBloom implements Callable<Integer> {
       }
 
       // Determine end block if not specified
-      if (endBlock == null) {
-        endBlock = getLatestSolidityBlockNumber();
-        if (endBlock == null || endBlock == 0) {
-          printError("Failed to determine latest block number");
-          return 1;
-        }
+      long latestSolidityBlockNumber;
+      try {
+        latestSolidityBlockNumber = getLatestSolidityBlockNumber();
+      } catch (Exception e) {
+        printError(e, "Failed to read latest solidified block number");
+        return 1;
+      }
+      if (latestSolidityBlockNumber < 0) {
+        printError("Latest solidified block number does not exist");
+        return 1;
+      }
+      if (endBlock == 0) {
+        endBlock = latestSolidityBlockNumber;
+      } else if (endBlock > latestSolidityBlockNumber) {
+        printInfo("End block %d is larger than latest solidified block num %d; using %d instead.",
+            endBlock, latestSolidityBlockNumber, latestSolidityBlockNumber);
+        endBlock = latestSolidityBlockNumber;
       }
 
-      Long minNonZeroBlockNumber = getMinNonZeroBlockNumber();
-      if (minNonZeroBlockNumber != null && startBlock < minNonZeroBlockNumber) {
+      long minBlockNumber;
+      try {
+        minBlockNumber = getMinBlockNumber();
+      } catch (Exception e) {
+        printError(e, "Failed to determine the first transaction result block");
+        return 1;
+      }
+      if (minBlockNumber < 0) {
+        printError("Transaction result database does not contain any non-zero block");
+        return 1;
+      }
+      if (startBlock == 0) {
+        startBlock = minBlockNumber;
+      } else if (startBlock < minBlockNumber) {
         printInfo(
             "Start block %d is earlier than the first available transaction result block %d; "
                 + "using %d instead.",
-            startBlock, minNonZeroBlockNumber, minNonZeroBlockNumber);
-        startBlock = minNonZeroBlockNumber;
+            startBlock, minBlockNumber, minBlockNumber);
+        startBlock = minBlockNumber;
       }
 
       // Validate block range
@@ -163,7 +193,11 @@ public class DbBackfillBloom implements Callable<Integer> {
 
   private boolean validateParameters() {
     if (startBlock < 0) {
-      printError("Start block %d must be greater than or equal to zero", startBlock);
+      printError("Start block must be >= zero, it is %d", startBlock);
+      return false;
+    }
+    if (endBlock < 0) {
+      printError("End block must be > zero, it is %d", endBlock);
       return false;
     }
 
@@ -177,8 +211,20 @@ public class DbBackfillBloom implements Callable<Integer> {
       printError("Database directory does not exist or is not a directory");
       return false;
     }
+    if (!isDatabaseDirectory(dbDir, PROPERTIES_DB_NAME)) {
+      printError("Required database '%s' does not exist", PROPERTIES_DB_NAME);
+      return false;
+    }
+    if (!isDatabaseDirectory(dbDir, TRANSACTION_RET_DB_NAME)) {
+      printError("Required database '%s' does not exist", TRANSACTION_RET_DB_NAME);
+      return false;
+    }
 
     return true;
+  }
+
+  private boolean isDatabaseDirectory(File databaseRoot, String databaseName) {
+    return new File(databaseRoot, databaseName).isDirectory();
   }
 
   private boolean initializeDatabase() {
@@ -187,8 +233,8 @@ public class DbBackfillBloom implements Callable<Integer> {
       // caches handles in a ConcurrentMap but its check-then-open is not atomic, so two
       // threads opening the same LevelDB dir concurrently would hit the exclusive-lock error.
       // Keep these handles for all worker threads instead of opening the same DB again.
-      transactionRetDb = DbTool.getDB(databaseDirectory, "transactionRetStore");
-      sectionBloomDb = DbTool.getDB(databaseDirectory, "section-bloom");
+      transactionRetDb = DbTool.getDB(databaseDirectory, TRANSACTION_RET_DB_NAME);
+      sectionBloomDb = DbTool.getDB(databaseDirectory, SECTION_BLOOM_DB_NAME);
 
       printInfo("Database connections initialized successfully");
       return true;
@@ -198,34 +244,24 @@ public class DbBackfillBloom implements Callable<Integer> {
     }
   }
 
-  private Long getLatestSolidityBlockNumber() {
-    try {
-      DBInterface propertiesDb = DbTool.getDB(databaseDirectory, "properties");
-      byte[] latestBlockKey = "LATEST_SOLIDIFIED_BLOCK_NUM".getBytes();
-      byte[] latestBlockBytes = propertiesDb.get(latestBlockKey);
-
-      if (latestBlockBytes != null) {
-        return ByteArray.toLong(latestBlockBytes);
-      }
-      return null;
-    } catch (Exception e) {
-      logger.error("Failed to get latest block number", e);
-      return null;
+  private long getLatestSolidityBlockNumber() throws IOException, RocksDBException {
+    DBInterface propertiesDb = DbTool.getDB(databaseDirectory, PROPERTIES_DB_NAME);
+    byte[] latestBlockKey = LATEST_SOLIDIFIED_BLOCK_NUM.getBytes(StandardCharsets.UTF_8);
+    byte[] latestBlockBytes = propertiesDb.get(latestBlockKey);
+    if (latestBlockBytes != null) {
+      return ByteArray.toLong(latestBlockBytes);
     }
+    return -1;
   }
 
-  private Long getMinNonZeroBlockNumber() {
-    try {
-      try (DBIterator iterator = transactionRetDb.iterator()) {
-        iterator.seek(ByteArray.fromLong(1));
-        if (iterator.hasNext()) {
-          return ByteArray.toLong(iterator.getKey());
-        }
+  private long getMinBlockNumber() throws IOException {
+    try (DBIterator iterator = transactionRetDb.iterator()) {
+      iterator.seek(ByteArray.fromLong(1));
+      if (iterator.hasNext()) {
+        return ByteArray.toLong(iterator.getKey());
       }
-    } catch (Exception e) {
-      logger.error("Failed to get minimum non-zero block number", e);
     }
-    return null;
+    return -1;
   }
 
   private int processBlocks() {
@@ -233,7 +269,7 @@ public class DbBackfillBloom implements Callable<Integer> {
     // Calculate the section range to be processed
     List<SectionRange> sectionRanges = calculateSectionRanges(startBlock, endBlock);
 
-    maxConcurrency = Math.min(maxConcurrency, sectionRanges.size());
+    maxConcurrency = StrictMath.min(maxConcurrency, sectionRanges.size());
     ExecutorService executor =
         ExecutorServiceManager.newFixedThreadPool("backfill-bloom", maxConcurrency);
     List<CompletableFuture<Void>> futures = new ArrayList<>();
@@ -299,8 +335,8 @@ public class DbBackfillBloom implements Callable<Integer> {
       long sectionEnd = sectionStart + BLOCKS_PER_SECTION - 1;
 
       // Adjust to the actual range that needs to be processed
-      long rangeStart = Math.max(currentBlock, sectionStart);
-      long rangeEnd = Math.min(endBlock, sectionEnd);
+      long rangeStart = StrictMath.max(currentBlock, sectionStart);
+      long rangeEnd = StrictMath.min(endBlock, sectionEnd);
 
       ranges.add(new SectionRange(rangeStart, rangeEnd, sectionId));
       currentBlock = sectionEnd + 1;

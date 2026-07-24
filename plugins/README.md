@@ -152,11 +152,14 @@ NOTE: large db may GC overhead limit exceeded.
 
 DB backfill bloom provides the ability to backfill SectionBloom data for historical blocks to enable `eth_getLogs` address/topics filtering. This is useful when `isJsonRpcFilterEnabled` was disabled during block processing and later enabled, causing historical blocks to lack SectionBloom data.
 
+The source database must contain a non-empty `transactionRetStore`. Ensure
+`storage.transHistory.switch` was enabled while the historical blocks were processed.
+
 ### Available parameters:
 
 - `-d | --database-directory`: Specify the database directory path, it is used to open the database to get the transaction log and write the SectionBloom data back, default: output-directory/database.
-- `-s | --start-block`: Specify the start block number for backfill (required).
-- `-e | --end-block`: Specify the end block number for backfill (optional, default: latest block).
+- `-s | --start-block`: Specify the start block number for backfill.
+- `-e | --end-block`: Specify the end block number for backfill (optional, default: latest solidity block).
 - `-c | --max-concurrency`: Specify the maximum concurrency for processing, default: 8.
 - `-h | --help`: Provide the help info.
 

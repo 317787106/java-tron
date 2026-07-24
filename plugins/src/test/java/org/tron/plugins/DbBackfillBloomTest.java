@@ -17,6 +17,7 @@ import java.io.IOException;
 import java.io.PrintStream;
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 import org.junit.After;
 import org.junit.Before;
@@ -47,6 +48,8 @@ public class DbBackfillBloomTest {
   public void setUp() throws IOException {
     // Create temporary database directory
     databaseDirectory = temporaryFolder.newFolder().toString();
+    assertTrue(new File(databaseDirectory, "properties").mkdir());
+    assertTrue(new File(databaseDirectory, "transactionRetStore").mkdir());
 
     // Create the command line interface using Toolkit as the root command
     cli = new CommandLine(new Toolkit());
@@ -61,6 +64,14 @@ public class DbBackfillBloomTest {
 
     // Mock DbTool static methods
     dbToolMock = mockStatic(DbTool.class);
+  }
+
+  private DBIterator mockMinBlock(DBInterface transactionRetDb, long blockNumber) {
+    DBIterator iterator = mock(DBIterator.class);
+    when(transactionRetDb.iterator()).thenReturn(iterator);
+    when(iterator.hasNext()).thenReturn(true);
+    when(iterator.getKey()).thenReturn(ByteArray.fromLong(blockNumber));
+    return iterator;
   }
 
   @After
@@ -107,6 +118,7 @@ public class DbBackfillBloomTest {
     // Mock latest block number
     when(propertiesDb.get(any(byte[].class)))
         .thenReturn(ByteArray.fromLong(1000L));
+    mockMinBlock(transactionRetDb, 1L);
 
     // Mock empty transaction data (no transactions to process)
     when(transactionRetDb.get(any(byte[].class)))
@@ -147,6 +159,7 @@ public class DbBackfillBloomTest {
 
     when(propertiesDb.get(any(byte[].class)))
         .thenReturn(ByteArray.fromLong(1000L));
+    mockMinBlock(transactionRetDb, 1L);
     when(transactionRetDb.get(any(byte[].class)))
         .thenReturn(null);
 
@@ -219,10 +232,58 @@ public class DbBackfillBloomTest {
   }
 
   @Test
+  public void testMissingPropertiesDatabaseIsRejectedBeforeOpeningDatabases() {
+    File databaseRoot = temporaryFolder.getRoot();
+    File transactionRetDirectory = new File(databaseRoot, "only-transaction-ret");
+    assertTrue(transactionRetDirectory.mkdir());
+    assertTrue(new File(transactionRetDirectory, "transactionRetStore").mkdir());
+
+    StringWriter err = new StringWriter();
+    CommandLine cmd = new CommandLine(new Toolkit());
+    cmd.setErr(new PrintWriter(err));
+
+    String[] args = new String[] {
+        "db", "backfill-bloom",
+        "-d", transactionRetDirectory.toString(),
+        "-e", "100"
+    };
+
+    assertEquals(1, cmd.execute(args));
+    assertTrue(err.toString().contains("Required database 'properties' does not exist"));
+    dbToolMock.verify(() -> DbTool.close());
+    dbToolMock.verifyNoMoreInteractions();
+  }
+
+  @Test
+  public void testMissingTransactionRetDatabaseIsRejectedBeforeOpeningDatabases() {
+    File databaseRoot = temporaryFolder.getRoot();
+    File propertiesDirectory = new File(databaseRoot, "only-properties");
+    assertTrue(propertiesDirectory.mkdir());
+    assertTrue(new File(propertiesDirectory, "properties").mkdir());
+
+    StringWriter err = new StringWriter();
+    CommandLine cmd = new CommandLine(new Toolkit());
+    cmd.setErr(new PrintWriter(err));
+
+    String[] args = new String[] {
+        "db", "backfill-bloom",
+        "-d", propertiesDirectory.toString(),
+        "-e", "100"
+    };
+
+    assertEquals(1, cmd.execute(args));
+    assertTrue(err.toString().contains(
+        "Required database 'transactionRetStore' does not exist"));
+    dbToolMock.verify(() -> DbTool.close());
+    dbToolMock.verifyNoMoreInteractions();
+  }
+
+  @Test
   public void testEndBlockLessThanStartBlock() throws Exception {
     // Mock database interfaces
     DBInterface transactionRetDb = mock(DBInterface.class);
     DBInterface sectionBloomDb = mock(DBInterface.class);
+    DBInterface propertiesDb = mock(DBInterface.class);
 
     dbToolMock.when(() -> DbTool.getDB(anyString(), anyString()))
         .thenAnswer(invocation -> {
@@ -232,10 +293,15 @@ public class DbBackfillBloomTest {
               return transactionRetDb;
             case "section-bloom":
               return sectionBloomDb;
+            case "properties":
+              return propertiesDb;
             default:
               return mock(DBInterface.class);
           }
         });
+    when(propertiesDb.get(any(byte[].class)))
+        .thenReturn(ByteArray.fromLong(1000L));
+    mockMinBlock(transactionRetDb, 1L);
 
     String[] args = new String[] {
         "db", "backfill-bloom",
@@ -285,6 +351,7 @@ public class DbBackfillBloomTest {
     // Mock latest block number
     when(propertiesDb.get(any(byte[].class)))
         .thenReturn(ByteArray.fromLong(5000L));
+    mockMinBlock(transactionRetDb, 1L);
 
     // Mock empty transaction data
     when(transactionRetDb.get(any(byte[].class)))
@@ -304,6 +371,7 @@ public class DbBackfillBloomTest {
   public void testAdjustsStartBlockToMinimumNonZeroTransactionResultBlock() throws Exception {
     DBInterface transactionRetDb = mock(DBInterface.class);
     DBInterface sectionBloomDb = mock(DBInterface.class);
+    DBInterface propertiesDb = mock(DBInterface.class);
     DBIterator iterator = mock(DBIterator.class);
 
     dbToolMock.when(() -> DbTool.getDB(anyString(), anyString()))
@@ -314,11 +382,15 @@ public class DbBackfillBloomTest {
               return transactionRetDb;
             case "section-bloom":
               return sectionBloomDb;
+            case "properties":
+              return propertiesDb;
             default:
               return mock(DBInterface.class);
           }
         });
 
+    when(propertiesDb.get(any(byte[].class)))
+        .thenReturn(ByteArray.fromLong(12L));
     when(transactionRetDb.iterator()).thenReturn(iterator);
     when(iterator.hasNext()).thenReturn(true);
     when(iterator.getKey()).thenReturn(ByteArray.fromLong(10L));
@@ -331,13 +403,13 @@ public class DbBackfillBloomTest {
     String[] args = new String[] {
         "db", "backfill-bloom",
         "-d", databaseDirectory,
-        "-s", "0",
+        "-s", "5",
         "-e", "12"
     };
 
     assertEquals(0, cmd.execute(args));
     assertTrue(out.toString().contains(
-        "Start block 0 is earlier than the first available transaction result block 10"));
+        "Start block 5 is earlier than the first available transaction result block 10"));
     assertTrue(out.toString().contains(
         "Starting SectionBloom backfill for blocks 10 to 12 (3 blocks)"));
     verify(iterator).seek(aryEq(ByteArray.fromLong(1)));
@@ -345,9 +417,10 @@ public class DbBackfillBloomTest {
   }
 
   @Test
-  public void testKeepsStartBlockWhenTransactionResultStoreIsEmpty() throws Exception {
+  public void testFailsWhenTransactionResultStoreIsEmpty() throws Exception {
     DBInterface transactionRetDb = mock(DBInterface.class);
     DBInterface sectionBloomDb = mock(DBInterface.class);
+    DBInterface propertiesDb = mock(DBInterface.class);
     DBIterator iterator = mock(DBIterator.class);
 
     dbToolMock.when(() -> DbTool.getDB(anyString(), anyString()))
@@ -358,18 +431,23 @@ public class DbBackfillBloomTest {
               return transactionRetDb;
             case "section-bloom":
               return sectionBloomDb;
+            case "properties":
+              return propertiesDb;
             default:
               return mock(DBInterface.class);
           }
         });
 
+    when(propertiesDb.get(any(byte[].class)))
+        .thenReturn(ByteArray.fromLong(6L));
     when(transactionRetDb.iterator()).thenReturn(iterator);
     when(iterator.hasNext()).thenReturn(false);
-    when(transactionRetDb.get(any(byte[].class))).thenReturn(null);
 
     StringWriter out = new StringWriter();
+    StringWriter err = new StringWriter();
     CommandLine cmd = new CommandLine(new Toolkit());
     cmd.setOut(new PrintWriter(out));
+    cmd.setErr(new PrintWriter(err));
 
     String[] args = new String[] {
         "db", "backfill-bloom",
@@ -378,18 +456,19 @@ public class DbBackfillBloomTest {
         "-e", "6"
     };
 
-    assertEquals(0, cmd.execute(args));
-    assertTrue(out.toString().contains(
-        "Starting SectionBloom backfill for blocks 5 to 6 (2 blocks)"));
+    assertEquals(1, cmd.execute(args));
+    assertTrue(err.toString().contains(
+        "Transaction result database does not contain any non-zero block"));
+    assertFalse(out.toString().contains("Starting SectionBloom backfill"));
     verify(iterator).seek(aryEq(ByteArray.fromLong(1)));
     verify(iterator).close();
   }
 
   @Test
-  public void testProcessingErrorIsWrittenToStderr() throws Exception {
+  public void testFailsWhenMinimumBlockCannotBeRead() throws Exception {
     DBInterface transactionRetDb = mock(DBInterface.class);
     DBInterface sectionBloomDb = mock(DBInterface.class);
-    DBIterator iterator = mock(DBIterator.class);
+    DBInterface propertiesDb = mock(DBInterface.class);
 
     dbToolMock.when(() -> DbTool.getDB(anyString(), anyString()))
         .thenAnswer(invocation -> {
@@ -399,13 +478,58 @@ public class DbBackfillBloomTest {
               return transactionRetDb;
             case "section-bloom":
               return sectionBloomDb;
+            case "properties":
+              return propertiesDb;
             default:
               return mock(DBInterface.class);
           }
         });
 
-    when(transactionRetDb.iterator()).thenReturn(iterator);
-    when(iterator.hasNext()).thenReturn(false);
+    when(propertiesDb.get(any(byte[].class)))
+        .thenReturn(ByteArray.fromLong(6L));
+    when(transactionRetDb.iterator())
+        .thenThrow(new RuntimeException("iterator failed"));
+
+    StringWriter err = new StringWriter();
+    CommandLine cmd = new CommandLine(new Toolkit());
+    cmd.setErr(new PrintWriter(err));
+
+    String[] args = new String[] {
+        "db", "backfill-bloom",
+        "-d", databaseDirectory,
+        "-s", "1",
+        "-e", "6"
+    };
+
+    assertEquals(1, cmd.execute(args));
+    assertTrue(err.toString().contains(
+        "Failed to determine the first transaction result block"));
+  }
+
+  @Test
+  public void testProcessingErrorIsWrittenToStderr() throws Exception {
+    DBInterface transactionRetDb = mock(DBInterface.class);
+    DBInterface sectionBloomDb = mock(DBInterface.class);
+    DBInterface propertiesDb = mock(DBInterface.class);
+
+    dbToolMock.when(() -> DbTool.getDB(anyString(), anyString()))
+        .thenAnswer(invocation -> {
+          String dbName = invocation.getArgument(1);
+          switch (dbName) {
+            case "transactionRetStore":
+              return transactionRetDb;
+            case "section-bloom":
+              return sectionBloomDb;
+            case "properties":
+              return propertiesDb;
+            default:
+              return mock(DBInterface.class);
+          }
+        });
+
+    when(propertiesDb.get(any(byte[].class)))
+        .thenReturn(ByteArray.fromLong(1L));
+    mockMinBlock(transactionRetDb, 1L);
     when(transactionRetDb.get(any(byte[].class)))
         .thenThrow(new RuntimeException("read failed"));
 
@@ -428,7 +552,7 @@ public class DbBackfillBloomTest {
   }
 
   @Test
-  public void testFailedToGetLatestSolidityBlockNumber() throws Exception {
+  public void testMissingLatestSolidityBlockNumber() throws Exception {
     // Mock database interfaces
     DBInterface transactionRetDb = mock(DBInterface.class);
     DBInterface sectionBloomDb = mock(DBInterface.class);
@@ -453,13 +577,61 @@ public class DbBackfillBloomTest {
     when(propertiesDb.get(any(byte[].class)))
         .thenReturn(null);
 
+    StringWriter err = new StringWriter();
+    CommandLine cmd = new CommandLine(new Toolkit());
+    cmd.setErr(new PrintWriter(err));
+
     String[] args = new String[] {
         "db", "backfill-bloom",
         "-d", databaseDirectory,
         "-s", "100"
         // No end block specified - should fail to auto-detect
     };
-    assertEquals(1, cli.execute(args));
+    assertEquals(1, cmd.execute(args));
+    assertTrue(err.toString().contains("Latest solidified block number does not exist"));
+    verify(propertiesDb).get(aryEq(
+        "LATEST_SOLIDIFIED_BLOCK_NUM".getBytes(StandardCharsets.UTF_8)));
+  }
+
+  @Test
+  public void testFailsWhenLatestSolidityBlockNumberCannotBeRead() {
+    DBInterface transactionRetDb = mock(DBInterface.class);
+    DBInterface sectionBloomDb = mock(DBInterface.class);
+    DBInterface propertiesDb = mock(DBInterface.class);
+
+    dbToolMock.when(() -> DbTool.getDB(anyString(), anyString()))
+        .thenAnswer(invocation -> {
+          String dbName = invocation.getArgument(1);
+          switch (dbName) {
+            case "transactionRetStore":
+              return transactionRetDb;
+            case "section-bloom":
+              return sectionBloomDb;
+            case "properties":
+              return propertiesDb;
+            default:
+              return mock(DBInterface.class);
+          }
+        });
+    when(propertiesDb.get(any(byte[].class)))
+        .thenThrow(new RuntimeException("read failed"));
+
+    StringWriter out = new StringWriter();
+    StringWriter err = new StringWriter();
+    CommandLine cmd = new CommandLine(new Toolkit());
+    cmd.setOut(new PrintWriter(out));
+    cmd.setErr(new PrintWriter(err));
+
+    String[] args = new String[] {
+        "db", "backfill-bloom",
+        "-d", databaseDirectory,
+        "-s", "1",
+        "-e", "6"
+    };
+
+    assertEquals(1, cmd.execute(args));
+    assertTrue(err.toString().contains("Failed to read latest solidified block number"));
+    assertFalse(out.toString().contains("using -1 instead"));
   }
 
   @Test
