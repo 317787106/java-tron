@@ -150,38 +150,46 @@ NOTE: large db may GC overhead limit exceeded.
 
 ## DB Backfill-Bloom
 
-DB backfill bloom provides the ability to backfill SectionBloom data for historical blocks to enable `eth_getLogs` address/topics filtering. This is useful when `isJsonRpcFilterEnabled` was disabled during block processing and later enabled, causing historical blocks to lack SectionBloom data.
+DB backfill bloom rebuilds SectionBloom data for historical blocks so that `eth_getLogs` can filter by address and topics. This is useful when `isJsonRpcFilterEnabled` was disabled during historical block processing and was enabled later.
 
-The source database must contain a non-empty `transactionRetStore`. Ensure
-`storage.transHistory.switch` was enabled while the historical blocks were processed.
+### Prerequisites and behavior
 
-The backfill operation is idempotent. If it is interrupted, you can safely rerun the same block range. Existing SectionBloom bits are preserved and set again. Do not run multiple backfill processes concurrently or run the tool while another process is using the same database.
+- Stop the node and any other process using the database before running the command.
+- The database directory must contain the `properties` and `transactionRetStore` databases. `transactionRetStore` must contain at least one non-zero block.
+- Ensure `storage.transHistory.switch` was enabled while the historical blocks were processed.
+- The start and end block numbers are inclusive.
+- The command creates or updates the `section-bloom` database in the specified database directory.
+- The operation is idempotent. If it is interrupted, safely rerun the same block range. Existing SectionBloom bits are preserved and set again. Do not run multiple backfill processes concurrently.
 
-### Available parameters:
+### Available parameters
 
-- `-d | --database-directory`: Specify the database directory path, it is used to open the database to get the transaction log and write the SectionBloom data back, default: output-directory/database.
-- `-s | --start-block`: Specify the start block number for backfill.
-- `-e | --end-block`: Specify the end block number for backfill (optional, default: latest solidity block).
-- `-c | --max-concurrency`: Specify the maximum concurrency for processing, default: 8.
-- `-h | --help`: Provide the help info.
+- `-d | --database-directory`: Parent directory containing the source databases and the destination `section-bloom` database. Default: `output-directory/database`.
+- `-s | --start-block`: Inclusive start block. Optional; defaults to the earliest non-zero block in `transactionRetStore`. A lower value is automatically raised to the earliest available block.
+- `-e | --end-block`: Inclusive end block. Optional; defaults to the latest solidified block in `properties`. A higher value is automatically reduced to the latest solidified block.
+- `-c | --max-concurrency`: Maximum number of processing threads, from 1 to 128. Default: 8. Use 4–8 for SATA SSD, 8–16 for NVMe SSD, or 1–2 for HDD. The actual concurrency does not exceed the number of sections being processed.
+- `-h | --help`: Display the help message.
 
-### Examples:
+### Examples
 
 ```shell script
-# full command
-  java -jar Toolkit.jar db backfill-bloom [-h] -s=<startBlock> [-e=<endBlock>] [-d=<databaseDirectory>] [-c=<maxConcurrency>]
-# examples
-   java -jar Toolkit.jar db backfill-bloom -s 1000000 -e 2000000 #1. backfill blocks 1000000 to 2000000
-   java -jar Toolkit.jar db backfill-bloom -s 1000000 -d /path/to/database #2. specify custom database directory
-   java -jar Toolkit.jar db backfill-bloom -s 1000000 -c 8 #3. use higher concurrency (8 threads)
+# Full command
+java -jar Toolkit.jar db backfill-bloom [-d <databaseDirectory>] [-s <startBlock>] [-e <endBlock>] [-c <maxConcurrency>] [-h]
+
+# Backfill the complete available range in the default database directory
+java -jar Toolkit.jar db backfill-bloom
+
+# Backfill blocks 1,000,000 through 2,000,000, inclusive
+java -jar Toolkit.jar db backfill-bloom -s 1000000 -e 2000000
+
+# Use a custom database directory and eight processing threads
+java -jar Toolkit.jar db backfill-bloom -d /path/to/database -c 8
 ```
 
-### Backfill speed
+### Progress and performance
 
-The time required to process different block ranges varies. It is recommended to increase `--max-concurrency` appropriately to speed up the backfill process.
+The terminal progress bar displays completed blocks, elapsed time, and estimated remaining time. `toolkit.log` records progress every 10,000 scanned blocks and includes the percentage, elapsed time, average rate, and estimated remaining time. The final summary reports scanned and successful blocks, blocks containing logs, errors, Bloom writes, duration, rates, and the concurrency used.
 
-- 0-10000000: It's done almost instantly because there are no logs inside.
-- 10000000-70000000: Takes about 3-4 hours/10,000,000 blocks with `--max-concurrency` set to 32.
+Performance depends on the number of logs, storage engine, disk, CPU, and database compaction. Increase `--max-concurrency` gradually while monitoring disk latency and CPU usage.
 
 ## Keystore
 
