@@ -155,6 +155,8 @@ DB backfill bloom provides the ability to backfill SectionBloom data for histori
 The source database must contain a non-empty `transactionRetStore`. Ensure
 `storage.transHistory.switch` was enabled while the historical blocks were processed.
 
+The backfill operation is idempotent. If it is interrupted, you can safely rerun the same block range. Existing SectionBloom bits are preserved and set again. Do not run multiple backfill processes concurrently or run the tool while another process is using the same database.
+
 ### Available parameters:
 
 - `-d | --database-directory`: Specify the database directory path, it is used to open the database to get the transaction log and write the SectionBloom data back, default: output-directory/database.

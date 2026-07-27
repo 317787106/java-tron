@@ -30,7 +30,10 @@ import picocli.CommandLine;
 
 @Slf4j(topic = "backfill-bloom")
 @CommandLine.Command(name = "backfill-bloom",
-    description = "Backfill SectionBloom for historical blocks to enable eth_getLogs filtering.",
+    description = {
+        "Backfill SectionBloom for historical blocks to enable eth_getLogs filtering.",
+        "The same block range can be safely rerun after interruption."
+    },
     exitCodeListHeading = "Exit Codes:%n",
     exitCodeList = {
         "0:Successful",
@@ -46,22 +49,25 @@ public class DbBackfillBloom implements Callable<Integer> {
   private String databaseDirectory;
 
   @CommandLine.Option(names = {"--start-block", "-s"},
-      description = "Start block number for backfill(default: earliest block)", order = 2)
+      description = "Start block number for backfill. Default: earliest block", order = 2)
   private long startBlock;
 
   @CommandLine.Option(names = {"--end-block", "-e"},
-      description = "End block number for backfill (default: latest solidity block)", order = 3)
+      description = "End block number for backfill, inclusive. Default: latest solidity block",
+      order = 3)
   private long endBlock;
 
   // sames as SectionBloomStore.BLOCK_PER_SECTION
   private static final int BLOCKS_PER_SECTION = 2048;
+  private static final long PROGRESS_LOG_INTERVAL = 10_000L;
   private static final String PROPERTIES_DB_NAME = "properties";
   private static final String TRANSACTION_RET_DB_NAME = "transactionRetStore";
   private static final String SECTION_BLOOM_DB_NAME = "section-bloom";
   private static final String LATEST_SOLIDIFIED_BLOCK_NUM = "LATEST_SOLIDIFIED_BLOCK_NUM";
 
   @CommandLine.Option(names = {"--max-concurrency", "-c"}, defaultValue = "8",
-      description = "Maximum concurrency for processing. Default: ${DEFAULT-VALUE}",
+      description = "Maximum concurrency for processing. Default: ${DEFAULT-VALUE}. For SATA SSD "
+          + "use 4–8; for NVMe SSD use 8–16; for HDD use 1–2.",
       order = 5)
   private int maxConcurrency;
 
@@ -155,10 +161,8 @@ public class DbBackfillBloom implements Callable<Integer> {
       if (startBlock == 0) {
         startBlock = minBlockNumber;
       } else if (startBlock < minBlockNumber) {
-        printInfo(
-            "Start block %d is earlier than the first available transaction result block %d; "
-                + "using %d instead.",
-            startBlock, minBlockNumber, minBlockNumber);
+        printInfo("Start block %d is earlier than the first available transaction result block %d; "
+            + "using %d instead.", startBlock, minBlockNumber, minBlockNumber);
         startBlock = minBlockNumber;
       }
 
@@ -170,12 +174,12 @@ public class DbBackfillBloom implements Callable<Integer> {
       }
 
       long totalBlocks = endBlock - startBlock + 1;
-      printInfo("Starting SectionBloom backfill for blocks %d to %d (%d blocks)",
+      printInfo("Starting SectionBloom backfill for block number %d to %d (%d blocks)",
           startBlock, endBlock, totalBlocks);
 
       // Process blocks with progress bar
       long startTime = System.currentTimeMillis();
-      int result = processBlocks();
+      int result = processBlocks(startTime);
       long duration = (System.currentTimeMillis() - startTime) / 1000;
 
       // Print summary
@@ -264,7 +268,7 @@ public class DbBackfillBloom implements Callable<Integer> {
     return -1;
   }
 
-  private int processBlocks() {
+  private int processBlocks(long startTime) {
     long totalBlocks = endBlock - startBlock + 1;
     // Calculate the section range to be processed
     List<SectionRange> sectionRanges = calculateSectionRanges(startBlock, endBlock);
@@ -274,8 +278,7 @@ public class DbBackfillBloom implements Callable<Integer> {
         ExecutorServiceManager.newFixedThreadPool("backfill-bloom", maxConcurrency);
     List<CompletableFuture<Void>> futures = new ArrayList<>();
 
-    try (ProgressBar pb = new ProgressBar("Scanning blocks for SectionBloom backfill",
-        totalBlocks)) {
+    try (ProgressBar pb = new ProgressBar("Backfill section-bloom", totalBlocks)) {
       printInfo("Processing %d sections with %d threads", sectionRanges.size(), maxConcurrency);
       // Submit all section tasks to the thread pool
       for (SectionRange range : sectionRanges) {
@@ -284,7 +287,7 @@ public class DbBackfillBloom implements Callable<Integer> {
 
         CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
           try {
-            processSection(finalSectionStart, finalSectionEnd, pb);
+            processSection(finalSectionStart, finalSectionEnd, totalBlocks, startTime, pb);
           } catch (Exception e) {
             printError(e, "Error processing section %d to %d",
                 finalSectionStart, finalSectionEnd);
@@ -345,7 +348,8 @@ public class DbBackfillBloom implements Callable<Integer> {
     return ranges;
   }
 
-  private void processSection(long sectionStart, long sectionEnd, ProgressBar pb) {
+  private void processSection(long sectionStart, long sectionEnd, long totalBlocks, long startTime,
+      ProgressBar pb) {
     for (long blockNum = sectionStart; blockNum <= sectionEnd; blockNum++) {
       try {
         processBlock(blockNum, transactionRetDb, sectionBloomDb);
@@ -354,10 +358,36 @@ public class DbBackfillBloom implements Callable<Integer> {
         printError(e, "Error processing block %d", blockNum);
         errorCount.incrementAndGet();
       } finally {
-        processedBlocks.incrementAndGet();
+        long processed = processedBlocks.incrementAndGet();
+        logProgress(processed, totalBlocks, startTime);
         pb.step();
       }
     }
+  }
+
+  private void logProgress(long processed, long totalBlocks, long startTime) {
+    if (processed % PROGRESS_LOG_INTERVAL != 0) {
+      return;
+    }
+
+    long elapsedMillis =
+        StrictMath.max(System.currentTimeMillis() - startTime, 1L);
+    double progress = (double) processed / totalBlocks * 100;
+    double blocksPerSecond = (double) processed * 1000 / elapsedMillis;
+    long remainingSeconds = (long) ((totalBlocks - processed) / blocksPerSecond);
+    logger.info(
+        "Backfill progress: {}/{} blocks ({}%), elapsed={}, rate={} blocks/s, remaining={}",
+        processed, totalBlocks, String.format(Locale.ROOT, "%.2f", progress),
+        formatDuration(elapsedMillis / 1000),
+        String.format(Locale.ROOT, "%.2f", blocksPerSecond),
+        formatDuration(remainingSeconds));
+  }
+
+  private String formatDuration(long totalSeconds) {
+    long hours = totalSeconds / 3600;
+    long minutes = totalSeconds % 3600 / 60;
+    long seconds = totalSeconds % 60;
+    return String.format(Locale.ROOT, "%02d:%02d:%02d", hours, minutes, seconds);
   }
 
   private void processBlock(long blockNum, DBInterface transactionRetDb, DBInterface sectionBloomDb)

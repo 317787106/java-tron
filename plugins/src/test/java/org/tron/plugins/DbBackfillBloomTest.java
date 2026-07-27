@@ -11,6 +11,9 @@ import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
@@ -25,6 +28,7 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 import org.mockito.MockedStatic;
+import org.slf4j.LoggerFactory;
 import org.tron.common.utils.ByteArray;
 import org.tron.plugins.utils.db.DBInterface;
 import org.tron.plugins.utils.db.DBIterator;
@@ -90,6 +94,8 @@ public class DbBackfillBloomTest {
   public void testHelp() {
     String[] args = new String[] { "db", "backfill-bloom", "-h" };
     assertEquals(0, cli.execute(args));
+    assertTrue(outputStream.toString().contains(
+        "The same block range can be safely rerun after interruption."));
   }
 
   @Test
@@ -186,6 +192,64 @@ public class DbBackfillBloomTest {
     String output = out.toString();
     assertTrue(output.contains("Total blocks scanned: 101"));
     assertTrue(output.contains("Success rate: 100.00%"));
+  }
+
+  @Test
+  public void testLogsProgressEveryTenThousandBlocksWithoutWritingToCommandOutput()
+      throws Exception {
+    DBInterface transactionRetDb = mock(DBInterface.class);
+    DBInterface sectionBloomDb = mock(DBInterface.class);
+    DBInterface propertiesDb = mock(DBInterface.class);
+
+    dbToolMock.when(() -> DbTool.getDB(anyString(), anyString()))
+        .thenAnswer(invocation -> {
+          String dbName = invocation.getArgument(1);
+          switch (dbName) {
+            case "transactionRetStore":
+              return transactionRetDb;
+            case "section-bloom":
+              return sectionBloomDb;
+            case "properties":
+              return propertiesDb;
+            default:
+              return mock(DBInterface.class);
+          }
+        });
+    when(propertiesDb.get(any(byte[].class)))
+        .thenReturn(ByteArray.fromLong(10_000L));
+    mockMinBlock(transactionRetDb, 1L);
+    when(transactionRetDb.get(any(byte[].class))).thenReturn(null);
+
+    StringWriter out = new StringWriter();
+    CommandLine cmd = new CommandLine(new Toolkit());
+    cmd.setOut(new PrintWriter(out));
+
+    Logger progressLogger = (Logger) LoggerFactory.getLogger("backfill-bloom");
+    ListAppender<ILoggingEvent> appender = new ListAppender<>();
+    appender.start();
+    progressLogger.addAppender(appender);
+    try {
+      String[] args = new String[] {
+          "db", "backfill-bloom",
+          "-d", databaseDirectory,
+          "-s", "1",
+          "-e", "10000",
+          "-c", "1"
+      };
+
+      assertEquals(0, cmd.execute(args));
+
+      long progressLogCount = appender.list.stream()
+          .map(ILoggingEvent::getFormattedMessage)
+          .filter(message -> message.startsWith(
+              "Backfill progress: 10000/10000 blocks (100.00%)"))
+          .count();
+      assertEquals(1L, progressLogCount);
+      assertFalse(out.toString().contains("Backfill progress:"));
+    } finally {
+      progressLogger.detachAppender(appender);
+      appender.stop();
+    }
   }
 
   @Test
@@ -411,7 +475,7 @@ public class DbBackfillBloomTest {
     assertTrue(out.toString().contains(
         "Start block 5 is earlier than the first available transaction result block 10"));
     assertTrue(out.toString().contains(
-        "Starting SectionBloom backfill for blocks 10 to 12 (3 blocks)"));
+        "Starting SectionBloom backfill for block number 10 to 12 (3 blocks)"));
     verify(iterator).seek(aryEq(ByteArray.fromLong(1)));
     verify(iterator).close();
   }
