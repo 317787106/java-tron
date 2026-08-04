@@ -561,6 +561,13 @@ public class Args extends CommonParameter {
     PARAMETER.jsonRpcMaxLogFilterNum = jsonrpc.getMaxLogFilterNum();
     PARAMETER.jsonRpcMaxMessageSize = jsonrpc.getMaxMessageSize();
 
+    // ---- Admin RPC / IPC ----
+    NodeConfig.AdminRpcConfig adminRpc = nc.getAdminRpc();
+    PARAMETER.adminRpcEnable = adminRpc.isEnable();
+    PARAMETER.adminListenAddress = adminRpc.getListenAddress();
+    PARAMETER.adminListenPort = adminRpc.getPort();
+    PARAMETER.ipcEnable = nc.isIpcEnable();
+
     // ---- P2P sub-bean ----
     PARAMETER.nodeP2pVersion = nc.getP2p().getVersion();
 
@@ -860,6 +867,9 @@ public class Args extends CommonParameter {
     }
     if (assigned.contains("--keystore-factory")) {
       PARAMETER.keystoreFactory = cmd.keystoreFactory;
+    }
+    if (assigned.contains("--attach")) {
+      PARAMETER.ipcSocketFile = cmd.ipcSocketFile;
     }
     if (assigned.contains("--rpc-thread")) {
       PARAMETER.rpcThreadNum = cmd.rpcThreadNum;
@@ -1292,7 +1302,7 @@ public class Args extends CommonParameter {
 
   private static Map<String, String[]> getOptionGroup() {
     String[] tronOption = new String[] {"version", "help", "shellConfFileName", "logbackPath",
-        "eventSubscribe", "solidityNode", "keystoreFactory"};
+        "eventSubscribe", "solidityNode", "keystoreFactory", "ipcSocketFile"};
     String[] dbOption = new String[] {"outputDirectory"};
     String[] witnessOption = new String[] {"witness", "privateKey"};
     String[] vmOption = new String[] {"debug"};
@@ -1315,4 +1325,3 @@ public class Args extends CommonParameter {
     return optionGroupMap;
   }
 }
-

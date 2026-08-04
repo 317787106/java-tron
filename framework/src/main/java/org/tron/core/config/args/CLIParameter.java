@@ -53,6 +53,10 @@ public class CLIParameter {
   @Parameter(names = {"--keystore-factory"}, description = "running KeystoreFactory")
   public boolean keystoreFactory;
 
+  @Parameter(names = {"--attach"},
+      description = "running an IPC client to interact with FullNode")
+  public String ipcSocketFile;
+
   @Deprecated
   @Parameter(names = {"--fast-forward"})
   public boolean fastForward;

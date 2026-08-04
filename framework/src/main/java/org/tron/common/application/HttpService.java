@@ -17,6 +17,7 @@ package org.tron.common.application;
 
 import com.google.common.annotations.VisibleForTesting;
 import java.io.IOException;
+import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.util.concurrent.CompletableFuture;
 import javax.servlet.RequestDispatcher;
@@ -77,7 +78,11 @@ public abstract class HttpService extends AbstractService {
   }
 
   protected void initServer() {
-    this.apiServer = new Server(this.port);
+    if (this.listenAddress == null) {
+      this.apiServer = new Server(this.port);
+    } else {
+      this.apiServer = new Server(new InetSocketAddress(this.listenAddress, this.port));
+    }
     int maxHttpConnectNumber = Args.getInstance().getMaxHttpConnectNumber();
     if (maxHttpConnectNumber > 0) {
       this.apiServer.addBean(new ConnectionLimit(maxHttpConnectNumber, this.apiServer));

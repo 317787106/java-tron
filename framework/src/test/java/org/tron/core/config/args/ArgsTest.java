@@ -280,6 +280,28 @@ public class ArgsTest {
     Args.clearParam();
   }
 
+  @Test
+  public void testAdminRpcAndIpcConfigBinding() {
+    Map<String, String> override = new HashMap<>();
+    override.put("storage.db.directory", "database");
+    override.put("node.ipcEnable", "true");
+    override.put("node.adminRpc.enable", "true");
+    override.put("node.adminRpc.listenAddress", "127.0.0.2");
+    override.put("node.adminRpc.port", "18575");
+    Config config = ConfigFactory.parseMap(override)
+        .withFallback(ConfigFactory.defaultReference());
+
+    try {
+      Args.applyConfigParams(config);
+      Assert.assertTrue(Args.getInstance().isIpcEnable());
+      Assert.assertTrue(Args.getInstance().isAdminRpcEnable());
+      Assert.assertEquals("127.0.0.2", Args.getInstance().getAdminListenAddress());
+      Assert.assertEquals(18575, Args.getInstance().getAdminListenPort());
+    } finally {
+      Args.clearParam();
+    }
+  }
+
   /**
    * Verify that CLI storage parameters correctly override config file values.
    *

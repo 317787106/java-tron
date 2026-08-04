@@ -182,6 +182,10 @@ public class CommonParameter {
   @Setter
   public boolean keystoreFactory = false;
 
+  @Getter
+  @Setter
+  public String ipcSocketFile = "";
+
   // -- RPC / HTTP --
   @Getter
   @Setter
@@ -488,6 +492,18 @@ public class CommonParameter {
   @Getter
   @Setter
   public int jsonRpcMaxLogFilterNum = 20000;
+  @Getter
+  @Setter
+  public boolean adminRpcEnable = false;
+  @Getter
+  @Setter
+  public String adminListenAddress = Constant.LOCAL_HOST;
+  @Getter
+  @Setter
+  public int adminListenPort = 8575;
+  @Getter
+  @Setter
+  public boolean ipcEnable = false;
   @Getter
   @Setter
   public int maxTransactionPendingSize;

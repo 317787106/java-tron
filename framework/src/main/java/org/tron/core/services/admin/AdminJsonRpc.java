@@ -1,0 +1,21 @@
+package org.tron.core.services.admin;
+
+import com.googlecode.jsonrpc4j.JsonRpcError;
+import com.googlecode.jsonrpc4j.JsonRpcErrors;
+import com.googlecode.jsonrpc4j.JsonRpcMethod;
+import com.googlecode.jsonrpc4j.JsonRpcParam;
+import java.util.Map;
+import org.tron.core.exception.jsonrpc.JsonRpcInvalidParamsException;
+
+public interface AdminJsonRpc {
+
+  @JsonRpcMethod("admin_example")
+  @JsonRpcErrors({
+      @JsonRpcError(exception = JsonRpcInvalidParamsException.class, code = -32602, data = "{}"),
+  })
+  String adminExample(@JsonRpcParam("param1") String param1, @JsonRpcParam("param2") String param2)
+      throws JsonRpcInvalidParamsException;
+
+  @JsonRpcMethod("admin_getRuntimeParameters")
+  Map<String, Object> getRuntimeParameters();
+}

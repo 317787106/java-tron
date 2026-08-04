@@ -28,6 +28,10 @@ public class NodeConfigTest {
     assertEquals(8, nc.getMinConnections());
     assertEquals(4, nc.getMaxFastForwardNum());
     assertFalse(nc.isOpenFullTcpDisconnect());
+    assertFalse(nc.isIpcEnable());
+    assertFalse(nc.getAdminRpc().isEnable());
+    assertEquals("127.0.0.1", nc.getAdminRpc().getListenAddress());
+    assertEquals(8575, nc.getAdminRpc().getPort());
     // reference.conf matches code default: discovery disabled when not configured
     assertFalse(nc.isDiscoveryEnable());
     assertFalse(nc.isDiscoveryPersist());
@@ -75,6 +79,18 @@ public class NodeConfigTest {
     assertEquals(60051, nc.getRpc().getPort());
     assertFalse(nc.getRpc().isPBFTEnable());
     assertEquals(60071, nc.getRpc().getPBFTPort());
+  }
+
+  @Test
+  public void testAdminRpcAndIpcBinding() {
+    Config config = withRef(
+        "node { ipcEnable = true, adminRpc { enable = true,"
+            + " listenAddress = \"127.0.0.2\", port = 18575 } }");
+    NodeConfig nc = NodeConfig.fromConfig(config);
+    assertTrue(nc.isIpcEnable());
+    assertTrue(nc.getAdminRpc().isEnable());
+    assertEquals("127.0.0.2", nc.getAdminRpc().getListenAddress());
+    assertEquals(18575, nc.getAdminRpc().getPort());
   }
 
   @Test

@@ -14,6 +14,7 @@ import org.tron.common.prometheus.Metrics;
 import org.tron.core.config.DefaultConfig;
 import org.tron.core.config.args.Args;
 import org.tron.core.exception.TronError;
+import org.tron.core.services.admin.ipc.IpcClient;
 
 @Slf4j(topic = "app")
 public class FullNode {
@@ -31,6 +32,10 @@ public class FullNode {
 
     if (parameter.isKeystoreFactory()) {
       KeystoreFactory.start();
+      return;
+    }
+    if (StringUtils.isNotEmpty(parameter.getIpcSocketFile())) {
+      IpcClient.start(parameter.getIpcSocketFile());
       return;
     }
     if (parameter.isSolidityNode()) {
