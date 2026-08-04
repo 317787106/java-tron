@@ -15,7 +15,14 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.attribute.PosixFilePermission;
+import java.util.EnumSet;
+import java.util.Set;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
 import org.newsclub.net.unix.AFUNIXServerSocket;
 import org.newsclub.net.unix.AFUNIXSocket;
@@ -32,11 +39,20 @@ import org.tron.core.services.admin.AdminJsonRpc;
 @Slf4j(topic = "API")
 public class IpcService extends AbstractService {
 
-  private final String esName = "admin-ipc-server";
-  private final ExecutorService pool = ExecutorServiceManager.newSingleThreadExecutor(esName, true);
+  private static final String ACCEPTOR_EXECUTOR_NAME = "admin-ipc-acceptor";
+  private static final String CLIENT_EXECUTOR_NAME = "admin-ipc-client";
+  private static final int CLIENT_HANDLER_THREADS = 4;
+  private static final int MAX_PENDING_CLIENTS = 16;
+
+  private final ExecutorService acceptorExecutor =
+      ExecutorServiceManager.newSingleThreadExecutor(ACCEPTOR_EXECUTOR_NAME, true);
+  private final ExecutorService clientExecutor =
+      ExecutorServiceManager.newThreadPoolExecutor(
+          CLIENT_HANDLER_THREADS, CLIENT_HANDLER_THREADS, 0L, TimeUnit.MILLISECONDS,
+          new ArrayBlockingQueue<>(MAX_PENDING_CLIENTS), CLIENT_EXECUTOR_NAME, true);
+  private final Set<AFUNIXSocket> activeClientSockets = ConcurrentHashMap.newKeySet();
   private volatile boolean isRunning = true;
   private AFUNIXServerSocket unixServerSocket;
-  private volatile AFUNIXSocket activeClientSocket;
   private Path socketFilePath;
   private final JsonRpcServer jsonRpcServer;
 
@@ -57,18 +73,28 @@ public class IpcService extends AbstractService {
 
     AFUNIXSocketAddress address = AFUNIXSocketAddress.of(socketFile);
     unixServerSocket = AFUNIXServerSocket.bindOn(address);
+    try {
+      setOwnerOnlyPermissions(socketFilePath);
+    } catch (IOException | RuntimeException e) {
+      try {
+        unixServerSocket.close();
+      } catch (IOException closeException) {
+        e.addSuppressed(closeException);
+      }
+      try {
+        Files.deleteIfExists(socketFilePath);
+      } catch (IOException deleteException) {
+        e.addSuppressed(deleteException);
+      }
+      throw e;
+    }
     unixServerSocket.setShutdownOnClose(true);
 
     logger.info("IpcService started, listening on {}", socketFile.getAbsolutePath());
     Runnable runnable = () -> {
       while (isRunning) {
-        AFUNIXSocket client = null;
         try {
-          client = unixServerSocket.accept();
-          activeClientSocket = client;
-          if (isRunning) {
-            handleClient(client);
-          }
+          registerClient(unixServerSocket.accept());
         } catch (Throwable throwable) {
           if (isRunning) {
             logger.error("Handle IPC request error", throwable);
@@ -76,13 +102,35 @@ public class IpcService extends AbstractService {
           ExitManager.findTronError(throwable).ifPresent(e -> {
             throw e;
           });
-        } finally {
-          closeClientSocket(client);
-          activeClientSocket = null;
         }
       }
     };
-    ExecutorServiceManager.submit(pool, runnable);
+    ExecutorServiceManager.submit(acceptorExecutor, runnable);
+  }
+
+  private void registerClient(AFUNIXSocket client) {
+    activeClientSockets.add(client);
+    if (!isRunning) {
+      closeAndRemoveClient(client);
+      return;
+    }
+    try {
+      ExecutorServiceManager.submit(clientExecutor, () -> {
+        try {
+          handleClient(client);
+        } finally {
+          closeAndRemoveClient(client);
+        }
+      });
+    } catch (RejectedExecutionException e) {
+      closeAndRemoveClient(client);
+      if (isRunning) {
+        logger.warn("Too many IPC clients; rejecting connection");
+      }
+    } catch (RuntimeException e) {
+      closeAndRemoveClient(client);
+      throw e;
+    }
   }
 
   private void handleClient(AFUNIXSocket client) {
@@ -94,9 +142,8 @@ public class IpcService extends AbstractService {
       String line;
       while ((line = reader.readLine()) != null) {
         String cmd = line.trim();
-        logger.info("Server received: {}", cmd);
+        logger.debug("Server received: {}", cmd);
         writer.write(handleCommand(cmd));
-        writer.newLine();
         writer.flush();
       }
     } catch (IOException e) {
@@ -119,7 +166,7 @@ public class IpcService extends AbstractService {
       response = e.getMessage();
     }
 
-    logger.info("IPC response: {}", response);
+    logger.debug("IPC response: {}", response);
     return response;
   }
 
@@ -127,11 +174,14 @@ public class IpcService extends AbstractService {
   public void innerStop() throws Exception {
     logger.info("Begin to stop IpcService ...");
     isRunning = false;
-    closeClientSocket(activeClientSocket);
     if (unixServerSocket != null) {
       unixServerSocket.close();
     }
-    ExecutorServiceManager.shutdownAndAwaitTermination(pool, esName);
+    for (AFUNIXSocket client : activeClientSockets) {
+      closeClientSocket(client);
+    }
+    ExecutorServiceManager.shutdownAndAwaitTermination(acceptorExecutor, ACCEPTOR_EXECUTOR_NAME);
+    ExecutorServiceManager.shutdownAndAwaitTermination(clientExecutor, CLIENT_EXECUTOR_NAME);
     if (socketFilePath != null) {
       Files.deleteIfExists(socketFilePath);
     }
@@ -149,6 +199,11 @@ public class IpcService extends AbstractService {
     }
   }
 
+  private void closeAndRemoveClient(AFUNIXSocket client) {
+    closeClientSocket(client);
+    activeClientSockets.remove(client);
+  }
+
   static Path resolveSocketFilePath(CommonParameter parameter, String pid) {
     return Paths.get(parameter.getOutputDirectory(),
         "java-tron." + pid + ".sock");
@@ -159,6 +214,11 @@ public class IpcService extends AbstractService {
     if (parent != null) {
       Files.createDirectories(parent);
     }
+  }
+
+  static void setOwnerOnlyPermissions(Path socketFilePath) throws IOException {
+    Files.setPosixFilePermissions(socketFilePath,
+        EnumSet.of(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE));
   }
 
   public static String getPid() {

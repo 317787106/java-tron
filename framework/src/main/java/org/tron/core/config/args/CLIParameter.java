@@ -57,6 +57,10 @@ public class CLIParameter {
       description = "running an IPC client to interact with FullNode")
   public String ipcSocketFile;
 
+  @Parameter(names = {"--exec"},
+      description = "execute one Admin IPC command and exit (requires --attach)")
+  public String ipcExecCommand;
+
   @Deprecated
   @Parameter(names = {"--fast-forward"})
   public boolean fastForward;

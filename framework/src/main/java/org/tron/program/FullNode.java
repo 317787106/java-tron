@@ -35,7 +35,7 @@ public class FullNode {
       return;
     }
     if (StringUtils.isNotEmpty(parameter.getIpcSocketFile())) {
-      IpcClient.start(parameter.getIpcSocketFile());
+      IpcClient.start(parameter.getIpcSocketFile(), Args.getIpcExecCommand());
       return;
     }
     if (parameter.isSolidityNode()) {

@@ -10,6 +10,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.attribute.PosixFilePermission;
+import java.util.EnumSet;
 import org.junit.Assert;
 import org.junit.Test;
 import org.newsclub.net.unix.AFUNIXSocket;
@@ -39,6 +41,75 @@ public class IpcServiceTest {
     Assert.assertNull(socketFilePath.getParent());
 
     IpcService.createParentDirectories(socketFilePath);
+  }
+
+  @Test(timeout = 10_000)
+  public void testSocketFileUsesOwnerOnlyPermissions() throws Exception {
+    CommonParameter parameter = Args.getInstance();
+    String originalOutputDirectory = parameter.outputDirectory;
+    Path outputDirectory = Files.createTempDirectory(Paths.get("/tmp"), "ipc-permission-test-");
+    IpcService service = new IpcService(
+        new AdminJsonRpcImpl(new CommonParameterExporter()));
+    boolean started = false;
+    try {
+      parameter.outputDirectory = outputDirectory.toString();
+      service.innerStart();
+      started = true;
+
+      Path socketFile = IpcService.resolveSocketFilePath(parameter, IpcService.getPid());
+      Assert.assertEquals(
+          EnumSet.of(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE),
+          Files.getPosixFilePermissions(socketFile));
+    } finally {
+      if (started) {
+        service.innerStop();
+      }
+      parameter.outputDirectory = originalOutputDirectory;
+      Files.deleteIfExists(outputDirectory);
+    }
+  }
+
+  @Test(timeout = 10_000)
+  public void testHandlesMultipleClientsConcurrently() throws Exception {
+    CommonParameter parameter = Args.getInstance();
+    String originalOutputDirectory = parameter.outputDirectory;
+    Path outputDirectory = Files.createTempDirectory(Paths.get("/tmp"), "ipc-multi-client-test-");
+    IpcService service = new IpcService(
+        new AdminJsonRpcImpl(new CommonParameterExporter()));
+    boolean started = false;
+    try {
+      parameter.outputDirectory = outputDirectory.toString();
+      service.innerStart();
+      started = true;
+
+      File socketFile = IpcService.resolveSocketFilePath(parameter, IpcService.getPid()).toFile();
+      AFUNIXSocketAddress address = AFUNIXSocketAddress.of(socketFile);
+      try (AFUNIXSocket firstClient = AFUNIXSocket.newInstance();
+          AFUNIXSocket secondClient = AFUNIXSocket.newInstance()) {
+        firstClient.connect(address);
+        firstClient.setSoTimeout(5_000);
+        BufferedWriter firstWriter = new BufferedWriter(
+            new OutputStreamWriter(firstClient.getOutputStream(), StandardCharsets.UTF_8));
+        BufferedReader firstReader = new BufferedReader(
+            new InputStreamReader(firstClient.getInputStream(), StandardCharsets.UTF_8));
+        assertSuccessfulResponse(sendRequest(firstWriter, firstReader, 1), 1);
+        assertSuccessfulResponse(sendRequest(firstWriter, firstReader, 2), 2);
+
+        secondClient.connect(address);
+        secondClient.setSoTimeout(5_000);
+        BufferedWriter secondWriter = new BufferedWriter(
+            new OutputStreamWriter(secondClient.getOutputStream(), StandardCharsets.UTF_8));
+        BufferedReader secondReader = new BufferedReader(
+            new InputStreamReader(secondClient.getInputStream(), StandardCharsets.UTF_8));
+        assertSuccessfulResponse(sendRequest(secondWriter, secondReader, 3), 3);
+      }
+    } finally {
+      if (started) {
+        service.innerStop();
+      }
+      parameter.outputDirectory = originalOutputDirectory;
+      Files.deleteIfExists(outputDirectory);
+    }
   }
 
   @Test(timeout = 10_000)
@@ -84,5 +155,20 @@ public class IpcServiceTest {
       parameter.outputDirectory = originalOutputDirectory;
       Files.deleteIfExists(outputDirectory);
     }
+  }
+
+  private String sendRequest(BufferedWriter writer, BufferedReader reader, int requestId)
+      throws IOException {
+    writer.write("{\"jsonrpc\":\"2.0\",\"method\":\"admin_example\","
+        + "\"params\":[\"a\",\"b\"],\"id\":" + requestId + "}");
+    writer.newLine();
+    writer.flush();
+    return reader.readLine();
+  }
+
+  private void assertSuccessfulResponse(String response, int requestId) {
+    Assert.assertNotNull(response);
+    Assert.assertTrue(response, response.contains("\"result\":\"a:b\""));
+    Assert.assertTrue(response, response.contains("\"id\":" + requestId));
   }
 }

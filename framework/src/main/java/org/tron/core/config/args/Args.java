@@ -9,6 +9,7 @@ import static org.tron.core.config.args.InetUtil.resolveInetSocketAddressList;
 
 import com.beust.jcommander.JCommander;
 import com.beust.jcommander.ParameterDescription;
+import com.beust.jcommander.ParameterException;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Strings;
 import com.typesafe.config.Config;
@@ -104,6 +105,9 @@ public class Args extends CommonParameter {
   @Getter
   private static String configFilePath = "";
 
+  @Getter
+  private static String ipcExecCommand;
+
   // Singleton config beans — populated at startup, read-only after init.
   // New code can read directly from these beans instead of CommonParameter.
   @Getter
@@ -158,6 +162,10 @@ public class Args extends CommonParameter {
     if (cmd.help) {
       Args.printHelp(jc);
       exit(0);
+    }
+    ipcExecCommand = cmd.ipcExecCommand;
+    if (ipcExecCommand != null && StringUtils.isEmpty(cmd.ipcSocketFile)) {
+      throw new ParameterException("--exec requires --attach <socket-path>");
     }
 
     // Resolve config file path
@@ -956,6 +964,7 @@ public class Args extends CommonParameter {
     rateLimiterConfig = null;
     metricsConfig = null;
     eventConfig = null;
+    ipcExecCommand = null;
   }
 
   // getProposalExpirationTime removed — logic moved to BlockConfig.fromConfig()
@@ -1302,7 +1311,8 @@ public class Args extends CommonParameter {
 
   private static Map<String, String[]> getOptionGroup() {
     String[] tronOption = new String[] {"version", "help", "shellConfFileName", "logbackPath",
-        "eventSubscribe", "solidityNode", "keystoreFactory", "ipcSocketFile"};
+        "eventSubscribe", "solidityNode", "keystoreFactory", "ipcSocketFile",
+        "ipcExecCommand"};
     String[] dbOption = new String[] {"outputDirectory"};
     String[] witnessOption = new String[] {"witness", "privateKey"};
     String[] vmOption = new String[] {"debug"};

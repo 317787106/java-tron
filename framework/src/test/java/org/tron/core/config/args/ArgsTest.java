@@ -15,6 +15,7 @@
 
 package org.tron.core.config.args;
 
+import com.beust.jcommander.ParameterException;
 import com.google.common.collect.Lists;
 import com.typesafe.config.Config;
 import com.typesafe.config.ConfigFactory;
@@ -47,6 +48,34 @@ public class ArgsTest {
   private final String privateKey = PublicMethod.getRandomPrivateKey();
   @Rule
   public ExpectedException thrown = ExpectedException.none();
+
+  @Test
+  public void testAttachWithExecParameters() {
+    try {
+      Args.setParam(new String[] {
+          "--attach", "/tmp/java-tron.sock",
+          "--exec", "admin_example one two"
+      }, TestConstants.TEST_CONF);
+
+      Assert.assertEquals("/tmp/java-tron.sock", Args.getInstance().getIpcSocketFile());
+      Assert.assertEquals("admin_example one two", Args.getIpcExecCommand());
+    } finally {
+      Args.clearParam();
+    }
+  }
+
+  @Test
+  public void testExecRequiresAttach() {
+    try {
+      Args.setParam(new String[] {"--exec", "admin_getRuntimeParameters"},
+          TestConstants.TEST_CONF);
+      Assert.fail("Expected --exec without --attach to fail");
+    } catch (ParameterException e) {
+      Assert.assertEquals("--exec requires --attach <socket-path>", e.getMessage());
+    } finally {
+      Args.clearParam();
+    }
+  }
 
   @Test
   public void get() {
