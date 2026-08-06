@@ -10,6 +10,7 @@ import org.eclipse.jetty.servlet.ServletHolder;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.tron.common.application.HttpService;
+import org.tron.core.Constant;
 import org.tron.core.config.args.Args;
 import org.tron.core.services.filter.HttpInterceptor;
 
@@ -25,6 +26,15 @@ public class AdminRpcHttpService extends HttpService {
     listenAddress = Args.getInstance().getAdminListenAddress();
     port = Args.getInstance().getAdminListenPort();
     contextPath = "/";
+  }
+
+  @Override
+  public void innerStart() throws Exception {
+    if (enable && !Constant.LOCAL_HOST.equals(listenAddress)) {
+      logger.warn("Admin RPC is enabled on {} and may be accessible remotely. "
+          + "Restrict access to trusted networks.", listenAddress);
+    }
+    super.innerStart();
   }
 
   @Override

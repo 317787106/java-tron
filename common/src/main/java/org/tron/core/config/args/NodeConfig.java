@@ -11,6 +11,7 @@ import java.util.List;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
+import org.tron.core.Constant;
 import org.tron.core.exception.TronError;
 
 // Node configuration bean for the "node" section of config.conf.
@@ -259,7 +260,7 @@ public class NodeConfig {
   public static class AdminRpcConfig {
 
     private boolean enable = false;
-    private String listenAddress = "127.0.0.1";
+    private String listenAddress = Constant.LOCAL_HOST;
     private int port = 8575;
   }
 
