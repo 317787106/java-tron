@@ -1,6 +1,9 @@
 package org.tron.core.services.admin.ipc;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.NullNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.googlecode.jsonrpc4j.JsonRpcServer;
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
@@ -13,12 +16,16 @@ import java.io.OutputStreamWriter;
 import java.lang.management.ManagementFactory;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.attribute.BasicFileAttributes;
+import java.nio.file.attribute.PosixFileAttributeView;
 import java.nio.file.attribute.PosixFilePermission;
 import java.util.EnumSet;
 import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
@@ -33,12 +40,15 @@ import org.tron.common.es.ExecutorServiceManager;
 import org.tron.common.exit.ExitManager;
 import org.tron.common.parameter.CommonParameter;
 import org.tron.core.config.args.Args;
+import org.tron.core.exception.TronError;
+import org.tron.core.exception.TronError.ErrCode;
 import org.tron.core.services.admin.AdminJsonRpc;
 
 @Component
 @Slf4j(topic = "API")
 public class IpcService extends AbstractService {
 
+  private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
   private static final String ACCEPTOR_EXECUTOR_NAME = "admin-ipc-acceptor";
   private static final String CLIENT_EXECUTOR_NAME = "admin-ipc-client";
   private static final int CLIENT_HANDLER_THREADS = 4;
@@ -58,19 +68,29 @@ public class IpcService extends AbstractService {
 
   public IpcService(AdminJsonRpc adminJsonRpc) {
     enable = isFullNode() && Args.getInstance().isIpcEnable();
-    port = -1; //not used
-    jsonRpcServer = new JsonRpcServer(new ObjectMapper(), adminJsonRpc, AdminJsonRpc.class);
+    jsonRpcServer = new JsonRpcServer(OBJECT_MAPPER, adminJsonRpc, AdminJsonRpc.class);
+  }
+
+  @Override
+  public CompletableFuture<Boolean> start() {
+    CompletableFuture<Boolean> resultFuture = new CompletableFuture<>();
+    try {
+      innerStart();
+      resultFuture.complete(true);
+    } catch (Exception e) {
+      resultFuture.completeExceptionally(e);
+    }
+    return resultFuture;
   }
 
   @Override
   public void innerStart() throws Exception {
     socketFilePath = resolveSocketFilePath(Args.getInstance(), getPid());
-    createParentDirectories(socketFilePath);
-    Files.deleteIfExists(socketFilePath);
+    Path outputDirectory = socketFilePath.getParent();
+    validateOutputDirectory(outputDirectory);
+    deleteStaleSocketFile(socketFilePath);
 
     File socketFile = socketFilePath.toFile();
-    socketFile.deleteOnExit();
-
     AFUNIXSocketAddress address = AFUNIXSocketAddress.of(socketFile);
     unixServerSocket = AFUNIXServerSocket.bindOn(address);
     try {
@@ -142,9 +162,14 @@ public class IpcService extends AbstractService {
       String line;
       while ((line = reader.readLine()) != null) {
         String cmd = line.trim();
-        logger.debug("Server received: {}", cmd);
-        writer.write(handleCommand(cmd));
-        writer.flush();
+        logger.debug("Received IPC request");
+        String response = handleCommand(cmd);
+        if (!response.isEmpty()) {
+          writer.write(response);
+          writer.newLine();
+          writer.flush();
+          logger.debug("Sent IPC response");
+        }
       }
     } catch (IOException e) {
       if (isRunning) {
@@ -153,21 +178,52 @@ public class IpcService extends AbstractService {
     }
   }
 
-  private String handleCommand(String jsonRequest) {
+  String handleCommand(String jsonRequest) {
     ByteArrayInputStream input =
         new ByteArrayInputStream(jsonRequest.getBytes(StandardCharsets.UTF_8));
     ByteArrayOutputStream output = new ByteArrayOutputStream();
 
-    String response;
     try {
-      jsonRpcServer.handleRequest(input, output);
-      response = output.toString(StandardCharsets.UTF_8.name());
+      dispatchRequest(input, output);
+      if (output.size() == 0) {
+        return "";
+      }
+      JsonNode response = OBJECT_MAPPER.readTree(output.toByteArray());
+      return response == null ? "" : OBJECT_MAPPER.writeValueAsString(response);
+    } catch (Exception e) {
+      logger.debug("Failed to dispatch IPC request");
+      return buildInternalErrorResponse(jsonRequest);
+    }
+  }
+
+  void dispatchRequest(ByteArrayInputStream input, ByteArrayOutputStream output)
+      throws IOException {
+    jsonRpcServer.handleRequest(input, output);
+  }
+
+  private String buildInternalErrorResponse(String jsonRequest) {
+    JsonNode requestId = NullNode.getInstance();
+    try {
+      JsonNode request = OBJECT_MAPPER.readTree(jsonRequest);
+      if (request != null && request.has("id")) {
+        requestId = request.get("id");
+      }
     } catch (IOException e) {
-      response = e.getMessage();
+      logger.debug("Unable to read request id from invalid IPC request");
     }
 
-    logger.debug("IPC response: {}", response);
-    return response;
+    ObjectNode error = OBJECT_MAPPER.createObjectNode();
+    error.put("code", -32603);
+    error.put("message", "Internal error");
+    ObjectNode response = OBJECT_MAPPER.createObjectNode();
+    response.put("jsonrpc", "2.0");
+    response.set("error", error);
+    response.set("id", requestId);
+    try {
+      return OBJECT_MAPPER.writeValueAsString(response);
+    } catch (IOException e) {
+      throw new IllegalStateException("Failed to serialize IPC error response", e);
+    }
   }
 
   @Override
@@ -209,11 +265,29 @@ public class IpcService extends AbstractService {
         "java-tron." + pid + ".sock");
   }
 
-  static void createParentDirectories(Path socketFilePath) throws IOException {
-    Path parent = socketFilePath.getParent();
-    if (parent != null) {
-      Files.createDirectories(parent);
+  static void validateOutputDirectory(Path outputDirectory) throws IOException {
+    if (outputDirectory == null || !Files.isDirectory(outputDirectory)) {
+      throw new TronError("IPC output directory does not exist or is not a directory",
+          ErrCode.API_SERVER_INIT);
     }
+    if (!Files.getFileStore(outputDirectory)
+        .supportsFileAttributeView(PosixFileAttributeView.class)) {
+      throw new TronError("IPC requires a POSIX-compatible output directory",
+          ErrCode.API_SERVER_INIT);
+    }
+  }
+
+  static void deleteStaleSocketFile(Path socketFilePath) throws IOException {
+    if (!Files.exists(socketFilePath, LinkOption.NOFOLLOW_LINKS)) {
+      return;
+    }
+    BasicFileAttributes attributes = Files.readAttributes(socketFilePath,
+        BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+    if (attributes.isSymbolicLink() || !attributes.isOther()) {
+      throw new TronError("Refusing to replace a non-socket IPC endpoint",
+          ErrCode.API_SERVER_INIT);
+    }
+    Files.delete(socketFilePath);
   }
 
   static void setOwnerOnlyPermissions(Path socketFilePath) throws IOException {

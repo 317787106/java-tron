@@ -49,86 +49,61 @@ import org.tron.program.Version;
 public class IpcClient {
 
   private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+  static final int EXIT_SUCCESS = 0;
+  static final int EXIT_FAILURE = 1;
 
   private final String socketFilePath;
-  private final Map<String, String> commandLowerMap;
-  private final Map<String, List<String>> commandParameters;
-  private final Map<String, List<JavaType>> commandParameterTypes;
+  private final Map<String, AdminCommand> adminCommands;
   private final DefaultParser commandParser = new DefaultParser().eofOnUnclosedQuote(true);
   private int requestId = 0;
 
   public IpcClient(String socketFilePath) {
     this.socketFilePath = socketFilePath;
-    this.commandLowerMap = collectAdminCommands();
-    this.commandParameters = collectAdminCommandParams();
-    this.commandParameterTypes = collectAdminCommandParamTypes();
+    this.adminCommands = collectAdminCommands();
   }
 
-  public static void start(String socketFilePath) {
-    start(socketFilePath, null);
+  public static int start(String socketFilePath) {
+    return start(socketFilePath, null);
   }
 
-  public static void start(String socketFilePath, String execCommand) {
+  public static int start(String socketFilePath, String execCommand) {
     IpcClient ipcClient = new IpcClient(socketFilePath);
     try {
-      ipcClient.run(execCommand);
+      return ipcClient.run(execCommand);
     } catch (IOException e) {
-      logger.error("", e);
+      System.err.println("Failed to communicate with IPC server.");
+      logger.debug("IPC client communication failed: {}", e.getClass().getSimpleName());
+      return EXIT_FAILURE;
     }
   }
 
-  private Map<String, String> collectAdminCommands() {
-    Map<String, String> commandMap = new HashMap<>();
-    Class<?> rpcInterface = AdminJsonRpc.class;
-    for (Method method : rpcInterface.getDeclaredMethods()) {
-      JsonRpcMethod rpcMethod = method.getAnnotation(JsonRpcMethod.class);
-      if (rpcMethod != null && rpcMethod.value() != null) {
-        commandMap.put(rpcMethod.value().toLowerCase(Locale.ROOT), rpcMethod.value());
-      }
-    }
-    return commandMap;
-  }
-
-  private Map<String, List<String>> collectAdminCommandParams() {
-    Map<String, List<String>> commandParameters = new HashMap<>();
-    Class<?> rpcInterface = AdminJsonRpc.class;
-
-    for (Method method : rpcInterface.getDeclaredMethods()) {
-      JsonRpcMethod rpcMethod = method.getAnnotation(JsonRpcMethod.class);
-      if (rpcMethod == null || rpcMethod.value() == null) {
-        continue;
-      }
-
-      String methodName = rpcMethod.value().toLowerCase(Locale.ROOT);
-      List<String> params = new ArrayList<>();
-      Annotation[][] paramAnnotations = method.getParameterAnnotations();
-      for (Annotation[] annotations : paramAnnotations) {
-        for (Annotation anno : annotations) {
-          if (anno instanceof JsonRpcParam) {
-            JsonRpcParam p = (JsonRpcParam) anno;
-            params.add(p.value());
-          }
-        }
-      }
-      commandParameters.put(methodName, params);
-    }
-    return commandParameters;
-  }
-
-  private Map<String, List<JavaType>> collectAdminCommandParamTypes() {
-    Map<String, List<JavaType>> parameterTypes = new HashMap<>();
+  private Map<String, AdminCommand> collectAdminCommands() {
+    Map<String, AdminCommand> commands = new HashMap<>();
     for (Method method : AdminJsonRpc.class.getDeclaredMethods()) {
       JsonRpcMethod rpcMethod = method.getAnnotation(JsonRpcMethod.class);
       if (rpcMethod == null || rpcMethod.value() == null) {
         continue;
       }
-      List<JavaType> types = new ArrayList<>();
-      for (Type type : method.getGenericParameterTypes()) {
-        types.add(OBJECT_MAPPER.getTypeFactory().constructType(type));
+
+      List<String> parameterNames = new ArrayList<>();
+      Annotation[][] paramAnnotations = method.getParameterAnnotations();
+      for (Annotation[] annotations : paramAnnotations) {
+        for (Annotation anno : annotations) {
+          if (anno instanceof JsonRpcParam) {
+            parameterNames.add(((JsonRpcParam) anno).value());
+          }
+        }
       }
-      parameterTypes.put(rpcMethod.value().toLowerCase(Locale.ROOT), types);
+
+      List<JavaType> parameterTypes = new ArrayList<>();
+      for (Type type : method.getGenericParameterTypes()) {
+        parameterTypes.add(OBJECT_MAPPER.getTypeFactory().constructType(type));
+      }
+
+      AdminCommand command = new AdminCommand(rpcMethod.value(), parameterNames, parameterTypes);
+      commands.put(rpcMethod.value().toLowerCase(Locale.ROOT), command);
     }
-    return parameterTypes;
+    return commands;
   }
 
   private void printHelp() {
@@ -139,11 +114,14 @@ public class IpcClient {
   }
 
   List<String> buildHelpLines() {
-    List<String> commands = new ArrayList<>(commandLowerMap.values());
+    List<String> commands = new ArrayList<>();
+    for (AdminCommand command : adminCommands.values()) {
+      commands.add(command.name);
+    }
     Collections.sort(commands);
     List<String> helpLines = new ArrayList<>();
     for (String command : commands) {
-      helpLines.add(formatUsage(command));
+      helpLines.add(formatUsage(adminCommands.get(command.toLowerCase(Locale.ROOT))));
     }
     helpLines.add("help [command]");
     helpLines.add("exit");
@@ -151,59 +129,57 @@ public class IpcClient {
     return helpLines;
   }
 
-  private String formatUsage(String command) {
-    String commandLowerCase = command.toLowerCase(Locale.ROOT);
-    List<String> parameters = commandParameters.get(commandLowerCase);
-    if (parameters == null || parameters.isEmpty()) {
-      return command;
+  private String formatUsage(AdminCommand command) {
+    if (command.parameterNames.isEmpty()) {
+      return command.name;
     }
-    List<JavaType> parameterTypes = commandParameterTypes.get(commandLowerCase);
     List<String> typedParameters = new ArrayList<>();
-    for (int i = 0; i < parameters.size(); i++) {
-      typedParameters.add(parameters.get(i) + ":" + formatType(parameterTypes.get(i)));
+    for (int i = 0; i < command.parameterNames.size(); i++) {
+      typedParameters.add(command.parameterNames.get(i) + ":"
+          + formatType(command.parameterTypes.get(i)));
     }
-    return command + " <" + StringUtils.join(typedParameters, "> <") + ">";
+    return command.name + " <" + StringUtils.join(typedParameters, "> <") + ">";
   }
 
-  public void run() throws IOException {
-    run(null);
+  public int run() throws IOException {
+    return run(null);
   }
 
-  void run(String execCommand) throws IOException {
+  int run(String execCommand) throws IOException {
     File socketFile = new File(socketFilePath);
     if (!socketFile.exists()) {
       System.err.println("IPC socket file does not exist: " + socketFile.getName());
-      return;
+      return EXIT_FAILURE;
     }
     AFUNIXSocketAddress address = AFUNIXSocketAddress.of(socketFile);
     try (Socket socket = AFUNIXSocket.newInstance()) {
       socket.connect(address);
       if (execCommand != null) {
-        runExec(socket, execCommand);
-        return;
+        return runExec(socket, execCommand);
       }
       printWelcome(socketFile);
       try (Terminal terminal = TerminalBuilder.builder().system(true).build()) {
         LineReader reader = createLineReader(terminal);
         runSession(socket, reader);
       }
+      return EXIT_SUCCESS;
     }
   }
 
-  void runExec(Socket socket, String commandLine) throws IOException {
+  int runExec(Socket socket, String commandLine) throws IOException {
     List<String> commandWords;
     try {
       commandWords = parseCommandLine(commandLine);
     } catch (SyntaxError e) {
       System.err.println("Invalid command syntax.");
-      return;
+      return EXIT_FAILURE;
     }
     if (commandWords.isEmpty()) {
       System.err.println("No command specified for --exec.");
-      return;
+      return EXIT_FAILURE;
     }
     if (isExitCommand(commandWords.get(0))) {
-      return;
+      return EXIT_SUCCESS;
     }
 
     String request;
@@ -211,10 +187,10 @@ public class IpcClient {
       request = buildRequest(commandWords);
     } catch (IllegalArgumentException e) {
       System.err.println(e.getMessage());
-      return;
+      return EXIT_FAILURE;
     }
     if (request == null) {
-      return;
+      return "help".equalsIgnoreCase(commandWords.get(0)) ? EXIT_SUCCESS : EXIT_FAILURE;
     }
 
     try (BufferedWriter serverWriter = new BufferedWriter(
@@ -231,9 +207,15 @@ public class IpcClient {
       } while (response != null && response.trim().isEmpty());
       if (response == null) {
         System.err.println("Disconnected from server before receiving a response.");
-        return;
+        return EXIT_FAILURE;
       }
-      System.out.println(formatResponse(response));
+      String formattedResponse = formatResponse(response);
+      if (isSuccessfulResponse(response)) {
+        System.out.println(formattedResponse);
+        return EXIT_SUCCESS;
+      }
+      System.err.println(formattedResponse);
+      return EXIT_FAILURE;
     }
   }
 
@@ -276,7 +258,7 @@ public class IpcClient {
 
   private LineReader createLineReader(Terminal terminal) {
     Completer commandCompleter =
-        new IpcCommandCompleter(commandLowerMap.keySet().toArray(new String[0]));
+        new IpcCommandCompleter(adminCommands.keySet().toArray(new String[0]));
     ArgumentCompleter completer = new ArgumentCompleter(
         commandCompleter,
         NullCompleter.INSTANCE
@@ -373,38 +355,37 @@ public class IpcClient {
     String commandLowerCase = command.toLowerCase(Locale.ROOT);
     if ("help".equals(commandLowerCase)) {
       if (commandWords.size() == 2
-          && commandLowerMap.containsKey(commandWords.get(1).toLowerCase(Locale.ROOT))) {
+          && adminCommands.containsKey(commandWords.get(1).toLowerCase(Locale.ROOT))) {
         String rpcMethod = commandWords.get(1).toLowerCase(Locale.ROOT);
-        System.out.println("usage: " + formatUsage(commandLowerMap.get(rpcMethod)));
+        System.out.println("usage: " + formatUsage(adminCommands.get(rpcMethod)));
       } else {
         printHelp();
       }
       return null;
     }
-    if (!commandLowerMap.containsKey(commandLowerCase)) {
+    AdminCommand adminCommand = adminCommands.get(commandLowerCase);
+    if (adminCommand == null) {
       System.err.println("Invalid cmd: " + command);
       printHelp();
       return null;
     }
-    if (commandWords.size() - 1 != commandParameters.get(commandLowerCase).size()) {
+    if (commandWords.size() - 1 != adminCommand.parameterNames.size()) {
       System.err.println("Invalid parameter, usage: "
-          + formatUsage(commandLowerMap.get(commandLowerCase)));
+          + formatUsage(adminCommand));
       return null;
     }
 
     List<String> rawValues = new ArrayList<>(
         commandWords.subList(1, commandWords.size()));
-    List<Object> values = convertArguments(commandLowerCase, rawValues);
-    return buildJsonWithParameter(commandLowerMap.get(commandLowerCase), values);
+    List<Object> values = convertArguments(adminCommand, rawValues);
+    return buildJsonWithParameter(adminCommand.name, values);
   }
 
-  private List<Object> convertArguments(String command, List<String> values) {
+  private List<Object> convertArguments(AdminCommand command, List<String> values) {
     List<Object> convertedValues = new ArrayList<>();
-    List<JavaType> parameterTypes = commandParameterTypes.get(command);
-    List<String> parameterNames = commandParameters.get(command);
     for (int i = 0; i < values.size(); i++) {
-      convertedValues.add(convertArgument(values.get(i), parameterTypes.get(i),
-          parameterNames.get(i)));
+      convertedValues.add(convertArgument(values.get(i), command.parameterTypes.get(i),
+          command.parameterNames.get(i)));
     }
     return convertedValues;
   }
@@ -486,6 +467,19 @@ public class IpcClient {
     }
   }
 
+  boolean isSuccessfulResponse(String response) {
+    try {
+      JsonNode root = OBJECT_MAPPER.readTree(response);
+      if (root == null || !root.isObject()) {
+        return false;
+      }
+      JsonNode error = root.get("error");
+      return (error == null || error.isNull()) && root.has("result");
+    } catch (JsonProcessingException e) {
+      return false;
+    }
+  }
+
   private String formatJsonValue(JsonNode value) throws JsonProcessingException {
     if (value == null || value.isNull()) {
       return "null";
@@ -504,5 +498,19 @@ public class IpcClient {
     params.put("params", values);
     params.put("id", ++requestId);
     return OBJECT_MAPPER.writeValueAsString(params);
+  }
+
+  private static class AdminCommand {
+
+    private final String name;
+    private final List<String> parameterNames;
+    private final List<JavaType> parameterTypes;
+
+    private AdminCommand(String name, List<String> parameterNames,
+        List<JavaType> parameterTypes) {
+      this.name = name;
+      this.parameterNames = parameterNames;
+      this.parameterTypes = parameterTypes;
+    }
   }
 }

@@ -106,6 +106,9 @@ public class Args extends CommonParameter {
   private static String configFilePath = "";
 
   @Getter
+  private static String ipcSocketFile;
+
+  @Getter
   private static String ipcExecCommand;
 
   // Singleton config beans — populated at startup, read-only after init.
@@ -163,9 +166,12 @@ public class Args extends CommonParameter {
       Args.printHelp(jc);
       exit(0);
     }
-    ipcExecCommand = cmd.ipcExecCommand;
-    if (ipcExecCommand != null && StringUtils.isEmpty(cmd.ipcSocketFile)) {
+    if (cmd.ipcExecCommand != null && StringUtils.isEmpty(cmd.ipcSocketFile)) {
       throw new ParameterException("--exec requires --attach <socket-path>");
+    }
+    if (StringUtils.isNotEmpty(cmd.ipcSocketFile)) {
+      applyAttachParams(cmd);
+      return;
     }
 
     // Resolve config file path
@@ -187,6 +193,14 @@ public class Args extends CommonParameter {
 
     // 6. Init witness (depends on CLI witness flag)
     initLocalWitnesses(config, cmd);
+  }
+
+  private static void applyAttachParams(CLIParameter cmd) {
+    ipcSocketFile = cmd.ipcSocketFile;
+    ipcExecCommand = cmd.ipcExecCommand;
+    if (StringUtils.isNotEmpty(cmd.logbackPath)) {
+      PARAMETER.logbackPath = cmd.logbackPath;
+    }
   }
 
   /**
@@ -876,9 +890,6 @@ public class Args extends CommonParameter {
     if (assigned.contains("--keystore-factory")) {
       PARAMETER.keystoreFactory = cmd.keystoreFactory;
     }
-    if (assigned.contains("--attach")) {
-      PARAMETER.ipcSocketFile = cmd.ipcSocketFile;
-    }
     if (assigned.contains("--rpc-thread")) {
       PARAMETER.rpcThreadNum = cmd.rpcThreadNum;
     }
@@ -964,6 +975,7 @@ public class Args extends CommonParameter {
     rateLimiterConfig = null;
     metricsConfig = null;
     eventConfig = null;
+    ipcSocketFile = null;
     ipcExecCommand = null;
   }
 

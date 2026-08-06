@@ -106,7 +106,8 @@ public class IpcClientTest {
     PrintStream capturedOut = new PrintStream(consoleOutput, true, "UTF-8");
     try {
       System.setOut(capturedOut);
-      new IpcClient("unused").runExec(socket, "admin_example \"hello world\" b");
+      Assert.assertEquals(IpcClient.EXIT_SUCCESS,
+          new IpcClient("unused").runExec(socket, "admin_example \"hello world\" b"));
     } finally {
       System.setOut(originalOut);
       capturedOut.close();
@@ -150,8 +151,9 @@ public class IpcClientTest {
     PrintStream capturedErr = new PrintStream(errorOutput, true, "UTF-8");
     try {
       System.setErr(capturedErr);
-      new IpcClient("unused").runExec(Mockito.mock(Socket.class),
-          "admin_example \"sensitive-value");
+      Assert.assertEquals(IpcClient.EXIT_FAILURE,
+          new IpcClient("unused").runExec(Mockito.mock(Socket.class),
+              "admin_example \"sensitive-value"));
     } finally {
       System.setErr(originalErr);
       capturedErr.close();
@@ -171,7 +173,8 @@ public class IpcClientTest {
     PrintStream capturedErr = new PrintStream(errorOutput, true, "UTF-8");
     try {
       System.setErr(capturedErr);
-      new IpcClient(missingSocket.toString()).run();
+      Assert.assertEquals(IpcClient.EXIT_FAILURE,
+          new IpcClient(missingSocket.toString()).run());
     } finally {
       System.setErr(originalErr);
       capturedErr.close();
@@ -179,6 +182,54 @@ public class IpcClientTest {
     }
 
     Assert.assertEquals("IPC socket file does not exist: missing.sock" + System.lineSeparator(),
+        errorOutput.toString("UTF-8"));
+  }
+
+  @Test
+  public void testExecReturnsFailureForRpcError() throws Exception {
+    Socket socket = Mockito.mock(Socket.class);
+    Mockito.when(socket.getOutputStream()).thenReturn(new ByteArrayOutputStream());
+    Mockito.when(socket.getInputStream()).thenReturn(new ByteArrayInputStream(
+        ("{\"jsonrpc\":\"2.0\",\"id\":1,"
+            + "\"error\":{\"code\":-32603,\"message\":\"Internal error\"}}\n")
+            .getBytes(StandardCharsets.UTF_8)));
+
+    PrintStream originalErr = System.err;
+    ByteArrayOutputStream errorOutput = new ByteArrayOutputStream();
+    PrintStream capturedErr = new PrintStream(errorOutput, true, "UTF-8");
+    try {
+      System.setErr(capturedErr);
+      Assert.assertEquals(IpcClient.EXIT_FAILURE,
+          new IpcClient("unused").runExec(socket, "admin_example a b"));
+    } finally {
+      System.setErr(originalErr);
+      capturedErr.close();
+    }
+
+    Assert.assertEquals("Error -32603: Internal error" + System.lineSeparator(),
+        errorOutput.toString("UTF-8"));
+  }
+
+  @Test
+  public void testExecReturnsFailureWhenServerDisconnects() throws Exception {
+    Socket socket = Mockito.mock(Socket.class);
+    Mockito.when(socket.getOutputStream()).thenReturn(new ByteArrayOutputStream());
+    Mockito.when(socket.getInputStream()).thenReturn(new ByteArrayInputStream(new byte[0]));
+
+    PrintStream originalErr = System.err;
+    ByteArrayOutputStream errorOutput = new ByteArrayOutputStream();
+    PrintStream capturedErr = new PrintStream(errorOutput, true, "UTF-8");
+    try {
+      System.setErr(capturedErr);
+      Assert.assertEquals(IpcClient.EXIT_FAILURE,
+          new IpcClient("unused").runExec(socket, "admin_example a b"));
+    } finally {
+      System.setErr(originalErr);
+      capturedErr.close();
+    }
+
+    Assert.assertEquals(
+        "Disconnected from server before receiving a response." + System.lineSeparator(),
         errorOutput.toString("UTF-8"));
   }
 

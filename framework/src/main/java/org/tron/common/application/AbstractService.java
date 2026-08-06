@@ -10,7 +10,6 @@ import org.tron.core.config.args.Args;
 @Slf4j(topic = "service")
 public abstract class AbstractService implements Service {
 
-  protected String listenAddress;
   protected int port;
   @Getter
   protected boolean enable;
@@ -20,16 +19,12 @@ public abstract class AbstractService implements Service {
 
   @Override
   public CompletableFuture<Boolean> start() {
-    if (port > 0) {
-      logger.info("{} starting on {}", name, port);
-    }
+    logger.info("{} starting on {}", name, port);
     final CompletableFuture<Boolean> resultFuture = new CompletableFuture<>();
     try {
       innerStart();
       resultFuture.complete(true);
-      if (port > 0) {
-        logger.info("{} started, listening on {}", name, port);
-      }
+      logger.info("{} started, listening on {}", name, port);
     } catch (Exception e) {
       resultFuture.completeExceptionally(e);
     }

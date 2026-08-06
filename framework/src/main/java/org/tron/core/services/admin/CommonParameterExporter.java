@@ -17,6 +17,7 @@ import java.util.Map.Entry;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.tron.common.parameter.CommonParameter;
+import org.tron.common.parameter.Exportable;
 
 @Component
 @Slf4j(topic = "API")
@@ -26,7 +27,7 @@ public class CommonParameterExporter {
   private static final String UNAVAILABLE_VALUE = "[UNAVAILABLE]";
   private static final String[] SENSITIVE_NAME_PARTS = {
       "private", "password", "passwd", "secret", "credential", "mnemonic",
-      "accesskey", "apikey", "localwitness", "seedphrase", "dbconfig",
+      "accesskey", "apikey", "localwitness", "seedphrase",
       "authorization", "authtoken"
   };
   private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
@@ -40,7 +41,13 @@ public class CommonParameterExporter {
     Field[] fields = CommonParameter.class.getFields();
     Arrays.sort(fields, Comparator.comparing(Field::getName));
     for (Field field : fields) {
+      if (!field.isAnnotationPresent(Exportable.class)) {
+        continue;
+      }
       String fieldName = field.getName();
+      if (isOmittedName(fieldName)) {
+        continue;
+      }
       if (isSensitiveName(fieldName)) {
         snapshot.put(fieldName, REDACTED_VALUE);
         continue;
@@ -75,7 +82,9 @@ public class CommonParameterExporter {
       Iterator<Entry<String, JsonNode>> fields = value.fields();
       while (fields.hasNext()) {
         Entry<String, JsonNode> field = fields.next();
-        if (isSensitiveName(field.getKey())) {
+        if (isOmittedName(field.getKey())) {
+          continue;
+        } else if (isSensitiveName(field.getKey())) {
           sanitized.put(field.getKey(), REDACTED_VALUE);
         } else {
           sanitized.set(field.getKey(), sanitize(field.getValue()));
@@ -84,6 +93,10 @@ public class CommonParameterExporter {
       return sanitized;
     }
     return value;
+  }
+
+  private boolean isOmittedName(String name) {
+    return "dbconfig".equals(name.toLowerCase(Locale.ROOT));
   }
 
   private boolean isSensitiveName(String name) {

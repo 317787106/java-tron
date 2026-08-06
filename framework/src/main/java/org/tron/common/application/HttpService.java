@@ -40,6 +40,8 @@ public abstract class HttpService extends AbstractService {
 
   protected Server apiServer;
 
+  protected String listenAddress;
+
   protected String contextPath;
 
   protected long maxRequestSize = 4 * 1024 * 1024; // 4MB

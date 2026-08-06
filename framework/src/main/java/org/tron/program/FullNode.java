@@ -34,8 +34,11 @@ public class FullNode {
       KeystoreFactory.start();
       return;
     }
-    if (StringUtils.isNotEmpty(parameter.getIpcSocketFile())) {
-      IpcClient.start(parameter.getIpcSocketFile(), Args.getIpcExecCommand());
+    if (StringUtils.isNotEmpty(Args.getIpcSocketFile())) {
+      int exitCode = IpcClient.start(Args.getIpcSocketFile(), Args.getIpcExecCommand());
+      if (exitCode != 0) {
+        System.exit(exitCode);
+      }
       return;
     }
     if (parameter.isSolidityNode()) {

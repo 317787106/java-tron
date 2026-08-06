@@ -24,6 +24,9 @@ import io.grpc.netty.NettyServerBuilder;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.net.InetAddress;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
@@ -51,21 +54,49 @@ public class ArgsTest {
 
   @Test
   public void testAttachWithExecParameters() {
+    Args.clearParam();
     try {
       Args.setParam(new String[] {
           "--attach", "/tmp/java-tron.sock",
-          "--exec", "admin_example one two"
+          "--exec", "admin_example one two",
+          "--log-config", "attach-logback.xml"
       }, TestConstants.TEST_CONF);
 
-      Assert.assertEquals("/tmp/java-tron.sock", Args.getInstance().getIpcSocketFile());
+      Assert.assertEquals("/tmp/java-tron.sock", Args.getIpcSocketFile());
       Assert.assertEquals("admin_example one two", Args.getIpcExecCommand());
+      Assert.assertEquals("attach-logback.xml", Args.getInstance().getLogbackPath());
+      Assert.assertNull(Args.getNodeConfig());
+      Assert.assertNull(Args.getLocalWitnesses());
     } finally {
       Args.clearParam();
+    }
+    Assert.assertNull(Args.getIpcSocketFile());
+    Assert.assertNull(Args.getIpcExecCommand());
+  }
+
+  @Test
+  public void testAttachSkipsInvalidNodeConfig() throws Exception {
+    Args.clearParam();
+    Path invalidConfig = Files.createTempFile("attach-invalid-config-", ".conf");
+    Files.write(invalidConfig, Arrays.asList("node {"), StandardCharsets.UTF_8);
+    try {
+      Args.setParam(new String[] {
+          "--attach", "/tmp/java-tron.sock",
+          "--config", invalidConfig.toString()
+      }, TestConstants.TEST_CONF);
+
+      Assert.assertEquals("/tmp/java-tron.sock", Args.getIpcSocketFile());
+      Assert.assertNull(Args.getNodeConfig());
+      Assert.assertEquals("", Args.getConfigFilePath());
+    } finally {
+      Args.clearParam();
+      Files.deleteIfExists(invalidConfig);
     }
   }
 
   @Test
   public void testExecRequiresAttach() {
+    Args.clearParam();
     try {
       Args.setParam(new String[] {"--exec", "admin_getRuntimeParameters"},
           TestConstants.TEST_CONF);

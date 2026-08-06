@@ -1,23 +1,32 @@
 package org.tron.core.services.admin.ipc;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.FileSystems;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.attribute.PosixFilePermission;
 import java.util.EnumSet;
 import org.junit.Assert;
+import org.junit.Assume;
 import org.junit.Test;
+import org.mockito.Mockito;
 import org.newsclub.net.unix.AFUNIXSocket;
 import org.newsclub.net.unix.AFUNIXSocketAddress;
 import org.tron.common.parameter.CommonParameter;
 import org.tron.core.config.args.Args;
+import org.tron.core.exception.TronError;
 import org.tron.core.services.admin.AdminJsonRpcImpl;
 import org.tron.core.services.admin.CommonParameterExporter;
 
@@ -36,15 +45,107 @@ public class IpcServiceTest {
   }
 
   @Test
-  public void testCreateParentDirectoriesWithNoParent() throws IOException {
-    Path socketFilePath = Paths.get("java-tron.1234.sock");
-    Assert.assertNull(socketFilePath.getParent());
+  public void testValidateOutputDirectoryRejectsMissingDirectory() throws IOException {
+    Path outputDirectory = Files.createTempDirectory("ipc-missing-output-test-");
+    Files.delete(outputDirectory);
 
-    IpcService.createParentDirectories(socketFilePath);
+    try {
+      IpcService.validateOutputDirectory(outputDirectory);
+      Assert.fail("Expected a missing output directory to be rejected");
+    } catch (TronError e) {
+      Assert.assertEquals("IPC output directory does not exist or is not a directory",
+          e.getMessage());
+    }
+  }
+
+  @Test
+  public void testDeleteStaleSocketFileRejectsRegularFile() throws IOException {
+    Path outputDirectory = Files.createTempDirectory("ipc-regular-file-test-");
+    Path socketFile = outputDirectory.resolve("java-tron.1234.sock");
+    Files.createFile(socketFile);
+    try {
+      IpcService.deleteStaleSocketFile(socketFile);
+      Assert.fail("Expected a regular file to be preserved");
+    } catch (TronError e) {
+      Assert.assertEquals("Refusing to replace a non-socket IPC endpoint", e.getMessage());
+      Assert.assertTrue(Files.isRegularFile(socketFile, LinkOption.NOFOLLOW_LINKS));
+    } finally {
+      Files.deleteIfExists(socketFile);
+      Files.deleteIfExists(outputDirectory);
+    }
+  }
+
+  @Test
+  public void testDeleteStaleSocketFileRejectsSymbolicLink() throws IOException {
+    assumePosixFileSystem();
+    Path outputDirectory = Files.createTempDirectory("ipc-symbolic-link-test-");
+    Path targetFile = outputDirectory.resolve("target");
+    Path socketFile = outputDirectory.resolve("java-tron.1234.sock");
+    Files.createFile(targetFile);
+    Files.createSymbolicLink(socketFile, targetFile.getFileName());
+    try {
+      IpcService.deleteStaleSocketFile(socketFile);
+      Assert.fail("Expected a symbolic link to be preserved");
+    } catch (TronError e) {
+      Assert.assertEquals("Refusing to replace a non-socket IPC endpoint", e.getMessage());
+      Assert.assertTrue(Files.isSymbolicLink(socketFile));
+      Assert.assertTrue(Files.exists(targetFile));
+    } finally {
+      Files.deleteIfExists(socketFile);
+      Files.deleteIfExists(targetFile);
+      Files.deleteIfExists(outputDirectory);
+    }
+  }
+
+  @Test
+  public void testValidateOutputDirectorySupportsPosixPermissions() throws IOException {
+    assumePosixFileSystem();
+    Path outputDirectory = Files.createTempDirectory("ipc-posix-output-test-");
+    try {
+      IpcService.validateOutputDirectory(outputDirectory);
+    } finally {
+      Files.deleteIfExists(outputDirectory);
+    }
+  }
+
+  @Test
+  public void testHandleCommandReturnsSingleLineJsonResponse() throws Exception {
+    IpcService service = new IpcService(
+        new AdminJsonRpcImpl(new CommonParameterExporter()));
+
+    String response = service.handleCommand(
+        "{\"jsonrpc\":\"2.0\",\"method\":\"admin_example\","
+            + "\"params\":[\"a\",\"b\"],\"id\":7}");
+
+    Assert.assertFalse(response, response.contains("\n"));
+    Assert.assertFalse(response, response.contains("\r"));
+    Assert.assertEquals("a:b", new ObjectMapper().readTree(response).get("result").asText());
+  }
+
+  @Test
+  public void testHandleCommandReturnsJsonRpcErrorOnDispatcherFailure() throws Exception {
+    IpcService service = Mockito.spy(new IpcService(
+        new AdminJsonRpcImpl(new CommonParameterExporter())));
+    Mockito.doThrow(new IOException("sensitive-detail"))
+        .when(service).dispatchRequest(Mockito.any(ByteArrayInputStream.class),
+            Mockito.any(ByteArrayOutputStream.class));
+
+    String response = service.handleCommand(
+        "{\"jsonrpc\":\"2.0\",\"method\":\"admin_example\","
+            + "\"params\":[\"a\",\"b\"],\"id\":9}");
+    JsonNode responseNode = new ObjectMapper().readTree(response);
+
+    Assert.assertEquals("2.0", responseNode.get("jsonrpc").asText());
+    Assert.assertEquals(-32603, responseNode.get("error").get("code").asInt());
+    Assert.assertEquals("Internal error", responseNode.get("error").get("message").asText());
+    Assert.assertEquals(9, responseNode.get("id").asInt());
+    Assert.assertFalse(response, response.contains("sensitive-detail"));
+    Assert.assertFalse(response, response.contains("\n"));
   }
 
   @Test(timeout = 10_000)
   public void testSocketFileUsesOwnerOnlyPermissions() throws Exception {
+    assumePosixFileSystem();
     CommonParameter parameter = Args.getInstance();
     String originalOutputDirectory = parameter.outputDirectory;
     Path outputDirectory = Files.createTempDirectory(Paths.get("/tmp"), "ipc-permission-test-");
@@ -53,7 +154,7 @@ public class IpcServiceTest {
     boolean started = false;
     try {
       parameter.outputDirectory = outputDirectory.toString();
-      service.innerStart();
+      Assert.assertTrue(service.start().get());
       started = true;
 
       Path socketFile = IpcService.resolveSocketFilePath(parameter, IpcService.getPid());
@@ -62,7 +163,7 @@ public class IpcServiceTest {
           Files.getPosixFilePermissions(socketFile));
     } finally {
       if (started) {
-        service.innerStop();
+        Assert.assertTrue(service.stop().get());
       }
       parameter.outputDirectory = originalOutputDirectory;
       Files.deleteIfExists(outputDirectory);
@@ -71,6 +172,7 @@ public class IpcServiceTest {
 
   @Test(timeout = 10_000)
   public void testHandlesMultipleClientsConcurrently() throws Exception {
+    assumePosixFileSystem();
     CommonParameter parameter = Args.getInstance();
     String originalOutputDirectory = parameter.outputDirectory;
     Path outputDirectory = Files.createTempDirectory(Paths.get("/tmp"), "ipc-multi-client-test-");
@@ -114,6 +216,7 @@ public class IpcServiceTest {
 
   @Test(timeout = 10_000)
   public void testStopClosesActiveClientSocket() throws Exception {
+    assumePosixFileSystem();
     CommonParameter parameter = Args.getInstance();
     String originalOutputDirectory = parameter.outputDirectory;
     Path outputDirectory = Files.createTempDirectory("ipc-test-");
@@ -170,5 +273,10 @@ public class IpcServiceTest {
     Assert.assertNotNull(response);
     Assert.assertTrue(response, response.contains("\"result\":\"a:b\""));
     Assert.assertTrue(response, response.contains("\"id\":" + requestId));
+  }
+
+  private void assumePosixFileSystem() {
+    Assume.assumeTrue("IPC requires POSIX file permissions",
+        FileSystems.getDefault().supportedFileAttributeViews().contains("posix"));
   }
 }
