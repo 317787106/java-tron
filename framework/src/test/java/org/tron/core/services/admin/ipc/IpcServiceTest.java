@@ -10,6 +10,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
+import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
@@ -19,6 +20,7 @@ import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.attribute.PosixFilePermission;
+import java.util.Arrays;
 import java.util.EnumSet;
 import org.junit.Assert;
 import org.junit.Assume;
@@ -32,7 +34,6 @@ import org.tron.core.exception.TronError;
 import org.tron.core.exception.jsonrpc.JsonRpcInvalidParamsException;
 import org.tron.core.services.admin.AdminJsonRpc;
 import org.tron.core.services.admin.AdminJsonRpcImpl;
-import org.tron.core.services.admin.CommonParameterExporter;
 
 public class IpcServiceTest {
 
@@ -148,7 +149,7 @@ public class IpcServiceTest {
   @Test
   public void testHandleCommandReturnsSingleLineJsonResponse() throws Exception {
     IpcService service = new IpcService(
-        new AdminJsonRpcImpl(new CommonParameterExporter()));
+        new AdminJsonRpcImpl());
 
     String response = service.handleCommand(
         "{\"jsonrpc\":\"2.0\",\"method\":\"admin_example\","
@@ -162,7 +163,7 @@ public class IpcServiceTest {
   @Test
   public void testHandleCommandReturnsJsonRpcErrorOnDispatcherFailure() throws Exception {
     IpcService service = Mockito.spy(new IpcService(
-        new AdminJsonRpcImpl(new CommonParameterExporter())));
+        new AdminJsonRpcImpl()));
     Mockito.doThrow(new IOException("sensitive-detail"))
         .when(service).dispatchRequest(Mockito.any(ByteArrayInputStream.class),
             Mockito.any(ByteArrayOutputStream.class));
@@ -201,18 +202,22 @@ public class IpcServiceTest {
   @Test
   public void testReadRequestAcceptsMaximumSize() throws Exception {
     IpcService service = newIpcService();
-    ByteArrayInputStream input =
-        new ByteArrayInputStream("1234\n".getBytes(StandardCharsets.UTF_8));
+    int maxRequestSize = getStaticIntField("MAX_REQUEST_SIZE");
+    byte[] request = new byte[maxRequestSize + 1];
+    Arrays.fill(request, 0, maxRequestSize, (byte) '1');
+    request[maxRequestSize] = '\n';
 
-    Assert.assertEquals("1234", readRequest(service, input, 4));
+    Assert.assertEquals(maxRequestSize,
+        readRequest(service, new ByteArrayInputStream(request)).length());
   }
 
   @Test(expected = IOException.class)
   public void testReadRequestRejectsOversizedInputWithoutNewline() throws Exception {
     IpcService service = newIpcService();
-    ByteArrayInputStream input = new ByteArrayInputStream("12345".getBytes(StandardCharsets.UTF_8));
+    int maxRequestSize = getStaticIntField("MAX_REQUEST_SIZE");
+    ByteArrayInputStream input = new ByteArrayInputStream(new byte[maxRequestSize + 1]);
 
-    readRequest(service, input, 4);
+    readRequest(service, input);
   }
 
   @Test(timeout = 10_000)
@@ -222,7 +227,7 @@ public class IpcServiceTest {
     String originalOutputDirectory = parameter.outputDirectory;
     Path outputDirectory = Files.createTempDirectory(Paths.get("/tmp"), "ipc-permission-test-");
     IpcService service = new IpcService(
-        new AdminJsonRpcImpl(new CommonParameterExporter()));
+        new AdminJsonRpcImpl());
     boolean started = false;
     Path socketFile = null;
     try {
@@ -247,7 +252,7 @@ public class IpcServiceTest {
     String originalOutputDirectory = parameter.outputDirectory;
     Path outputDirectory = Files.createTempDirectory(Paths.get("/tmp"), "ipc-multi-client-test-");
     IpcService service = new IpcService(
-        new AdminJsonRpcImpl(new CommonParameterExporter()));
+        new AdminJsonRpcImpl());
     boolean started = false;
     Path socketFile = null;
     try {
@@ -303,7 +308,7 @@ public class IpcServiceTest {
     String originalOutputDirectory = parameter.outputDirectory;
     Path outputDirectory = Files.createTempDirectory("ipc-test-");
     IpcService service = new IpcService(
-        new AdminJsonRpcImpl(new CommonParameterExporter()));
+        new AdminJsonRpcImpl());
     boolean started = false;
     Path socketFile = null;
     try {
@@ -364,7 +369,7 @@ public class IpcServiceTest {
   }
 
   private IpcService newIpcService() {
-    return new IpcService(new AdminJsonRpcImpl(new CommonParameterExporter()));
+    return new IpcService(new AdminJsonRpcImpl());
   }
 
   private void cleanupIpcService(IpcService service, boolean started, CommonParameter parameter,
@@ -418,10 +423,15 @@ public class IpcServiceTest {
     invokePrivate(service, "deleteStaleSocketFile", new Class<?>[] {Path.class}, socketFile);
   }
 
-  private String readRequest(IpcService service, InputStream input, int maxRequestSize)
-      throws Exception {
+  private String readRequest(IpcService service, InputStream input) throws Exception {
     return (String) invokePrivate(service, "readRequest",
-        new Class<?>[] {InputStream.class, int.class}, input, maxRequestSize);
+        new Class<?>[] {InputStream.class}, input);
+  }
+
+  private int getStaticIntField(String fieldName) throws Exception {
+    Field field = IpcService.class.getDeclaredField(fieldName);
+    field.setAccessible(true);
+    return field.getInt(null);
   }
 
   private void registerClient(IpcService service, AFUNIXSocket client) throws Exception {

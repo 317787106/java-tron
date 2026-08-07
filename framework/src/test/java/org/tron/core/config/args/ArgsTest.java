@@ -125,7 +125,7 @@ public class ArgsTest {
   public void testExecRequiresAttach() {
     Args.clearParam();
     try {
-      Args.setParam(new String[] {"--exec", "admin_getRuntimeParameters"},
+      Args.setParam(new String[] {"--exec", "admin_example"},
           TestConstants.TEST_CONF);
       Assert.fail("Expected --exec without --attach to fail");
     } catch (ParameterException e) {

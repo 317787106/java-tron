@@ -4,9 +4,7 @@ import com.typesafe.config.Config;
 import java.io.File;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
-import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import javax.annotation.PostConstruct;
@@ -70,36 +68,30 @@ public class DynamicArgs {
     updateTrustNodes(nodeConfig);
   }
 
-  /**
-   * Builds the complete active-node list before replacing the shared reference atomically. Using
-   * {@code clear()} followed by {@code addAll()} would let concurrent readers observe a transient
-   * empty or partially updated list.
-   */
   private void updateActiveNodes(NodeConfig nodeConfig) {
     List<InetSocketAddress> newActiveNodes =
         Args.filterInetSocketAddress(nodeConfig.getActive(), true);
     parameter.setActiveNodes(newActiveNodes);
-    List<InetSocketAddress> activeNodes = new CopyOnWriteArrayList<>(newActiveNodes);
-    TronNetService.getP2pConfig().setActiveNodes(activeNodes);
-    logger.debug("p2p active nodes : {}", activeNodes);
+    List<InetSocketAddress> activeNodes = TronNetService.getP2pConfig().getActiveNodes();
+    activeNodes.clear();
+    activeNodes.addAll(newActiveNodes);
+    logger.debug("p2p active nodes : {}",
+        TronNetService.getP2pConfig().getActiveNodes().toString());
   }
 
-  /**
-   * Builds the complete trust-node list before replacing the shared reference atomically, so
-   * concurrent configuration exports and network readers see either the old or the new snapshot.
-   */
   private void updateTrustNodes(NodeConfig nodeConfig) {
-    List<InetAddress> newPassiveNodes = new ArrayList<>();
+    List<InetAddress> newPassiveNodes = new java.util.ArrayList<>();
     for (InetSocketAddress sa : Args.filterInetSocketAddress(nodeConfig.getPassive(), false)) {
       newPassiveNodes.add(sa.getAddress());
     }
     parameter.setPassiveNodes(newPassiveNodes);
-    List<InetAddress> newTrustNodes = new ArrayList<>(newPassiveNodes);
-    parameter.getActiveNodes().forEach(n -> newTrustNodes.add(n.getAddress()));
-    parameter.getFastForwardNodes().forEach(f -> newTrustNodes.add(f.getAddress()));
-    List<InetAddress> trustNodes = new CopyOnWriteArrayList<>(newTrustNodes);
-    TronNetService.getP2pConfig().setTrustNodes(trustNodes);
-    logger.debug("p2p trust nodes : {}", trustNodes);
+    List<InetAddress> trustNodes = TronNetService.getP2pConfig().getTrustNodes();
+    trustNodes.clear();
+    trustNodes.addAll(newPassiveNodes);
+    parameter.getActiveNodes().forEach(n -> trustNodes.add(n.getAddress()));
+    parameter.getFastForwardNodes().forEach(f -> trustNodes.add(f.getAddress()));
+    logger.debug("p2p trust nodes : {}",
+        TronNetService.getP2pConfig().getTrustNodes().toString());
   }
 
   @PreDestroy
