@@ -54,7 +54,7 @@ public class IpcService extends AbstractService {
   private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
   private static final String ACCEPTOR_EXECUTOR_NAME = "admin-ipc-acceptor";
   private static final String CLIENT_EXECUTOR_NAME = "admin-ipc-client";
-  private static final int MAX_REQUEST_SIZE = 4 * 1024 * 1024;
+  private static final int MAX_REQUEST_SIZE = 4 * 1024 * 1024; //same as HttpService.maxRequestSize
   private static final int CLIENT_IDLE_TIMEOUT_MILLIS = 10 * 60 * 1000;
 
   // macOS/Linux sun_path buffers are 104/108 bytes. Reserve one byte for the terminating null
@@ -186,7 +186,7 @@ public class IpcService extends AbstractService {
             new OutputStreamWriter(client.getOutputStream(), StandardCharsets.UTF_8))) {
 
       String line;
-      while ((line = readRequest(input, MAX_REQUEST_SIZE)) != null) {
+      while ((line = readRequest(input)) != null) {
         String cmd = line.trim();
         logger.debug("Received IPC request");
         String response = handleCommand(cmd);
@@ -208,14 +208,14 @@ public class IpcService extends AbstractService {
     }
   }
 
-  private String readRequest(InputStream input, int maxRequestSize) throws IOException {
+  private String readRequest(InputStream input) throws IOException {
     ByteArrayOutputStream request = new ByteArrayOutputStream();
     int value;
     while ((value = input.read()) != -1) {
       if (value == '\n') {
         break;
       }
-      if (request.size() >= maxRequestSize) {
+      if (request.size() >= MAX_REQUEST_SIZE) {
         throw new RequestTooLargeException();
       }
       request.write(value);
