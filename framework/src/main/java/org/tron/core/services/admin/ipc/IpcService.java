@@ -57,6 +57,11 @@ public class IpcService extends AbstractService {
   private static final int MAX_REQUEST_SIZE = 4 * 1024 * 1024;
   private static final int CLIENT_IDLE_TIMEOUT_MILLIS = 10 * 60 * 1000;
 
+  // macOS/Linux sun_path buffers are 104/108 bytes. Reserve one byte for the terminating null
+  // and three bytes of portability margin below the smaller macOS limit.
+  private static final int MAX_SOCKET_PATH_BYTES = 100;
+  private static final Path FALLBACK_SOCKET_DIRECTORY = Paths.get("/tmp");
+
   private final ExecutorService acceptorExecutor =
       ExecutorServiceManager.newSingleThreadExecutor(ACCEPTOR_EXECUTOR_NAME, true);
   private final ExecutorService clientExecutor =
@@ -309,8 +314,20 @@ public class IpcService extends AbstractService {
   }
 
   private Path resolveSocketFilePath(CommonParameter parameter, String pid) {
-    return Paths.get(parameter.getOutputDirectory(),
-        "java-tron." + pid + ".sock");
+    String socketFileName = "java-tron." + pid + ".sock";
+    Path outputSocketFile = Paths.get(parameter.getOutputDirectory(), socketFileName)
+        .toAbsolutePath().normalize();
+    if (getSocketPathLength(outputSocketFile) <= MAX_SOCKET_PATH_BYTES) {
+      return outputSocketFile;
+    }
+
+    logger.warn("IPC socket path under output directory exceeds {} bytes; using /tmp instead",
+        MAX_SOCKET_PATH_BYTES);
+    return FALLBACK_SOCKET_DIRECTORY.resolve(socketFileName).toAbsolutePath().normalize();
+  }
+
+  private int getSocketPathLength(Path socketFile) {
+    return socketFile.toString().getBytes(AFUNIXSocketAddress.addressCharset()).length;
   }
 
   private void validateOutputDirectory(Path outputDirectory) throws IOException {

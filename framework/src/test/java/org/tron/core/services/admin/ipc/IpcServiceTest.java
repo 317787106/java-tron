@@ -6,7 +6,6 @@ import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
-import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -46,8 +45,36 @@ public class IpcServiceTest {
     Path socketFilePath = resolveSocketFilePath(service, parameter, "1234");
 
     Assert.assertEquals(
-        Paths.get("node-output", "java-tron.1234.sock"),
+        Paths.get("node-output", "java-tron.1234.sock").toAbsolutePath().normalize(),
         socketFilePath);
+  }
+
+  @Test
+  public void testResolveSocketFilePathFallsBackToTmpForLongOutputPath() throws Exception {
+    IpcService service = newIpcService();
+    CommonParameter parameter = new CommonParameter();
+    parameter.outputDirectory = Paths.get("/tmp",
+        "a-very-long-output-directory-name-that-makes-the-resulting-unix-domain-socket-path-"
+            + "exceed-the-portable-limit").toString();
+
+    Path socketFilePath = resolveSocketFilePath(service, parameter, "1234");
+
+    Assert.assertEquals(Paths.get("/tmp", "java-tron.1234.sock"), socketFilePath);
+  }
+
+  @Test
+  public void testResolveSocketFilePathCountsEncodedBytes() throws Exception {
+    IpcService service = newIpcService();
+    CommonParameter parameter = new CommonParameter();
+    StringBuilder outputDirectory = new StringBuilder("/tmp/");
+    for (int i = 0; i < 40; i++) {
+      outputDirectory.append("目");
+    }
+    parameter.outputDirectory = outputDirectory.toString();
+
+    Path socketFilePath = resolveSocketFilePath(service, parameter, "1234");
+
+    Assert.assertEquals(Paths.get("/tmp", "java-tron.1234.sock"), socketFilePath);
   }
 
   @Test
@@ -197,21 +224,19 @@ public class IpcServiceTest {
     IpcService service = new IpcService(
         new AdminJsonRpcImpl(new CommonParameterExporter()));
     boolean started = false;
+    Path socketFile = null;
     try {
       parameter.outputDirectory = outputDirectory.toString();
       Assert.assertTrue(service.start().get());
       started = true;
 
-      Path socketFile = resolveSocketFilePath(service, parameter, getPid(service));
+      socketFile = resolveSocketFilePath(service, parameter, getPid(service));
       Assert.assertEquals(
           EnumSet.of(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE),
           Files.getPosixFilePermissions(socketFile));
     } finally {
-      if (started) {
-        Assert.assertTrue(service.stop().get());
-      }
-      parameter.outputDirectory = originalOutputDirectory;
-      Files.deleteIfExists(outputDirectory);
+      cleanupIpcService(service, started, parameter, originalOutputDirectory, socketFile,
+          outputDirectory);
     }
   }
 
@@ -224,13 +249,14 @@ public class IpcServiceTest {
     IpcService service = new IpcService(
         new AdminJsonRpcImpl(new CommonParameterExporter()));
     boolean started = false;
+    Path socketFile = null;
     try {
       parameter.outputDirectory = outputDirectory.toString();
       service.innerStart();
       started = true;
 
-      File socketFile = resolveSocketFilePath(service, parameter, getPid(service)).toFile();
-      AFUNIXSocketAddress address = AFUNIXSocketAddress.of(socketFile);
+      socketFile = resolveSocketFilePath(service, parameter, getPid(service));
+      AFUNIXSocketAddress address = AFUNIXSocketAddress.of(socketFile.toFile());
       try (AFUNIXSocket firstClient = AFUNIXSocket.newInstance();
           AFUNIXSocket secondClient = AFUNIXSocket.newInstance()) {
         firstClient.connect(address);
@@ -251,11 +277,8 @@ public class IpcServiceTest {
         assertSuccessfulResponse(sendRequest(secondWriter, secondReader, 3), 3);
       }
     } finally {
-      if (started) {
-        service.innerStop();
-      }
-      parameter.outputDirectory = originalOutputDirectory;
-      Files.deleteIfExists(outputDirectory);
+      cleanupIpcService(service, started, parameter, originalOutputDirectory, socketFile,
+          outputDirectory);
     }
   }
 
@@ -282,13 +305,14 @@ public class IpcServiceTest {
     IpcService service = new IpcService(
         new AdminJsonRpcImpl(new CommonParameterExporter()));
     boolean started = false;
+    Path socketFile = null;
     try {
       parameter.outputDirectory = outputDirectory.toString();
       service.innerStart();
       started = true;
 
-      File socketFile = resolveSocketFilePath(service, parameter, getPid(service)).toFile();
-      AFUNIXSocketAddress address = AFUNIXSocketAddress.of(socketFile);
+      socketFile = resolveSocketFilePath(service, parameter, getPid(service));
+      AFUNIXSocketAddress address = AFUNIXSocketAddress.of(socketFile.toFile());
       try (AFUNIXSocket client = AFUNIXSocket.newInstance()) {
         client.connect(address);
         client.setSoTimeout(5_000);
@@ -311,16 +335,72 @@ public class IpcServiceTest {
         }
       }
     } finally {
-      if (started) {
-        service.innerStop();
-      }
-      parameter.outputDirectory = originalOutputDirectory;
-      Files.deleteIfExists(outputDirectory);
+      cleanupIpcService(service, started, parameter, originalOutputDirectory, socketFile,
+          outputDirectory);
     }
+  }
+
+  @Test
+  public void testCleanupRestoresOutputDirectoryWhenStopFails() throws Exception {
+    CommonParameter parameter = new CommonParameter();
+    String originalOutputDirectory = parameter.outputDirectory;
+    Path outputDirectory = Files.createTempDirectory("ipc-cleanup-test-");
+    Path socketFile = Files.createFile(outputDirectory.resolve("java-tron.1234.sock"));
+    parameter.outputDirectory = outputDirectory.toString();
+    IpcService service = Mockito.mock(IpcService.class);
+    Mockito.doThrow(new IOException("stop failed")).when(service).innerStop();
+
+    try {
+      cleanupIpcService(service, true, parameter, originalOutputDirectory, socketFile,
+          outputDirectory);
+      Assert.fail("Expected the stop failure to be preserved");
+    } catch (IOException e) {
+      Assert.assertEquals("stop failed", e.getMessage());
+    }
+
+    Assert.assertEquals(originalOutputDirectory, parameter.outputDirectory);
+    Assert.assertFalse(Files.exists(socketFile));
+    Assert.assertFalse(Files.exists(outputDirectory));
   }
 
   private IpcService newIpcService() {
     return new IpcService(new AdminJsonRpcImpl(new CommonParameterExporter()));
+  }
+
+  private void cleanupIpcService(IpcService service, boolean started, CommonParameter parameter,
+      String originalOutputDirectory, Path socketFile, Path outputDirectory) throws Exception {
+    parameter.outputDirectory = originalOutputDirectory;
+    Exception failure = null;
+    if (started) {
+      try {
+        service.innerStop();
+      } catch (Exception e) {
+        failure = e;
+      }
+    }
+    try {
+      if (socketFile != null) {
+        Files.deleteIfExists(socketFile);
+      }
+    } catch (IOException e) {
+      failure = mergeCleanupFailure(failure, e);
+    }
+    try {
+      Files.deleteIfExists(outputDirectory);
+    } catch (IOException e) {
+      failure = mergeCleanupFailure(failure, e);
+    }
+    if (failure != null) {
+      throw failure;
+    }
+  }
+
+  private Exception mergeCleanupFailure(Exception failure, IOException cleanupFailure) {
+    if (failure == null) {
+      return cleanupFailure;
+    }
+    failure.addSuppressed(cleanupFailure);
+    return failure;
   }
 
   private Path resolveSocketFilePath(IpcService service, CommonParameter parameter, String pid)

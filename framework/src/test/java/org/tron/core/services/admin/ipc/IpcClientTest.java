@@ -17,6 +17,7 @@ import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import org.jline.reader.LineReader;
 import org.jline.reader.UserInterruptException;
@@ -297,6 +298,36 @@ public class IpcClientTest {
       Mockito.verify(reader, Mockito.never()).printAbove("null");
       Mockito.verify(reader, Mockito.never()).printAbove("");
       Mockito.verify(reader).printAbove("Disconnected from server.");
+    }
+  }
+
+  @Test(timeout = 10_000)
+  public void testSessionExitDoesNotInterruptInputThread() throws Exception {
+    LineReader reader = Mockito.mock(LineReader.class);
+    Mockito.when(reader.readLine("> ")).thenReturn("exit");
+
+    try (ServerSocket serverSocket = new ServerSocket(0);
+        Socket clientSocket = new Socket("127.0.0.1", serverSocket.getLocalPort());
+        Socket serverConnection = serverSocket.accept()) {
+      IpcClient client = new IpcClient("unused");
+      AtomicReference<Throwable> failure = new AtomicReference<>();
+      AtomicBoolean interrupted = new AtomicBoolean(true);
+      Thread sessionThread = new Thread(() -> {
+        try {
+          client.runSession(clientSocket, reader);
+          interrupted.set(Thread.currentThread().isInterrupted());
+        } catch (Throwable throwable) {
+          failure.set(throwable);
+        }
+      }, "ipc-client-clean-exit-test-session");
+      sessionThread.setDaemon(true);
+      sessionThread.start();
+      sessionThread.join(5_000);
+
+      Assert.assertFalse("IPC client did not exit after the exit command", sessionThread.isAlive());
+      Assert.assertNull("IPC client session failed", failure.get());
+      Assert.assertFalse("Clean IPC client exit left the thread interrupted", interrupted.get());
+      Mockito.verify(reader, Mockito.never()).printAbove("Disconnected from server.");
     }
   }
 

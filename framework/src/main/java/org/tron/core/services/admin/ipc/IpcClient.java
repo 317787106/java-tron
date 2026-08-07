@@ -256,8 +256,9 @@ public class IpcClient {
       } catch (IOException e) {
         logger.debug("IPC response stream closed: {}", e.getMessage());
       } finally {
-        notifyDisconnected(connected, reader);
-        inputThread.interrupt();
+        if (notifyDisconnected(connected, reader)) {
+          inputThread.interrupt();
+        }
       }
     }, "admin-ipc-client-reader");
     readerThread.setDaemon(true);
@@ -303,8 +304,9 @@ public class IpcClient {
   private void inputRequest(final Socket socket, LineReader reader, AtomicBoolean connected) {
     String prompt = "> ";
 
-    try (BufferedWriter serverWriter = new BufferedWriter(
-        new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8))) {
+    try {
+      BufferedWriter serverWriter = new BufferedWriter(
+          new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8));
       while (connected.get()) {
         try {
           List<String> commandWords = parseCommandLine(reader.readLine(prompt));
@@ -346,10 +348,12 @@ public class IpcClient {
     }
   }
 
-  private void notifyDisconnected(AtomicBoolean connected, LineReader reader) {
+  private boolean notifyDisconnected(AtomicBoolean connected, LineReader reader) {
     if (connected.compareAndSet(true, false)) {
       reader.printAbove("Disconnected from server.");
+      return true;
     }
+    return false;
   }
 
   List<String> parseCommandLine(String commandLine) {

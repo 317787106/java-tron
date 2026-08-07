@@ -26,19 +26,19 @@ public class FullNode {
     ExitManager.initExceptionHandler();
     checkJdkVersion();
     Args.setParam(args, "config.conf");
-    CommonParameter parameter = Args.getInstance();
-
-    LogService.load(parameter.getLogbackPath());
-
-    if (parameter.isKeystoreFactory()) {
-      KeystoreFactory.start();
-      return;
-    }
     if (StringUtils.isNotEmpty(Args.getIpcSocketFile())) {
       int exitCode = IpcClient.start(Args.getIpcSocketFile(), Args.getIpcExecCommand());
       if (exitCode != 0) {
         System.exit(exitCode);
       }
+      return;
+    }
+
+    CommonParameter parameter = Args.getInstance();
+    LogService.load(parameter.getLogbackPath());
+
+    if (parameter.isKeystoreFactory()) {
+      KeystoreFactory.start();
       return;
     }
     if (parameter.isSolidityNode()) {
