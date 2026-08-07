@@ -75,22 +75,49 @@ public class ArgsTest {
   }
 
   @Test
-  public void testAttachSkipsInvalidNodeConfig() throws Exception {
+  public void testAttachRejectsNodeConfigOption() {
     Args.clearParam();
-    Path invalidConfig = Files.createTempFile("attach-invalid-config-", ".conf");
-    Files.write(invalidConfig, Arrays.asList("node {"), StandardCharsets.UTF_8);
     try {
       Args.setParam(new String[] {
           "--attach", "/tmp/java-tron.sock",
-          "--config", invalidConfig.toString()
+          "--config", "config.conf"
       }, TestConstants.TEST_CONF);
-
-      Assert.assertEquals("/tmp/java-tron.sock", Args.getIpcSocketFile());
-      Assert.assertNull(Args.getNodeConfig());
-      Assert.assertEquals("", Args.getConfigFilePath());
+      Assert.fail("Expected a node configuration option to be rejected");
+    } catch (ParameterException e) {
+      Assert.assertEquals("--attach cannot be combined with: --config", e.getMessage());
     } finally {
       Args.clearParam();
-      Files.deleteIfExists(invalidConfig);
+    }
+  }
+
+  @Test
+  public void testAttachRejectsEmptySocketPath() {
+    Args.clearParam();
+    try {
+      Args.setParam(new String[] {"--attach", ""}, TestConstants.TEST_CONF);
+      Assert.fail("Expected an empty socket path to be rejected");
+    } catch (ParameterException e) {
+      Assert.assertEquals("--attach requires a non-empty <socket-path>", e.getMessage());
+    } finally {
+      Args.clearParam();
+    }
+  }
+
+  @Test
+  public void testAttachRejectsOtherNodeOptions() {
+    Args.clearParam();
+    try {
+      Args.setParam(new String[] {
+          "--attach", "/tmp/java-tron.sock",
+          "--keystore-factory",
+          "seed.example.org:18888"
+      }, TestConstants.TEST_CONF);
+      Assert.fail("Expected node startup options to be rejected");
+    } catch (ParameterException e) {
+      Assert.assertEquals(
+          "--attach cannot be combined with: --keystore-factory, seedNode", e.getMessage());
+    } finally {
+      Args.clearParam();
     }
   }
 

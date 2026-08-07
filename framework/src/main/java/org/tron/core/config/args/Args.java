@@ -166,11 +166,8 @@ public class Args extends CommonParameter {
       Args.printHelp(jc);
       exit(0);
     }
-    if (cmd.ipcExecCommand != null && StringUtils.isEmpty(cmd.ipcSocketFile)) {
-      throw new ParameterException("--exec requires --attach <socket-path>");
-    }
-    if (StringUtils.isNotEmpty(cmd.ipcSocketFile)) {
-      applyAttachParams(cmd);
+    List<ParameterDescription> assignedParameters = getAssignedParameters(jc);
+    if (tryApplyAttachParams(cmd, assignedParameters)) {
       return;
     }
 
@@ -183,7 +180,7 @@ public class Args extends CommonParameter {
     applyConfigParams(config);
 
     // 3. CLI overrides Config (highest priority, including --es → eventSubscribe)
-    applyCLIParams(cmd, jc);
+    applyCLIParams(cmd, assignedParameters);
 
     // 4. Apply event config after CLI
     applyEventConfig(eventConfig);
@@ -195,12 +192,56 @@ public class Args extends CommonParameter {
     initLocalWitnesses(config, cmd);
   }
 
-  private static void applyAttachParams(CLIParameter cmd) {
+  private static List<ParameterDescription> getAssignedParameters(JCommander jc) {
+    return jc.getParameters().stream()
+        .filter(ParameterDescription::isAssigned)
+        .collect(Collectors.toList());
+  }
+
+  private static boolean tryApplyAttachParams(CLIParameter cmd,
+      List<ParameterDescription> assignedParameters) {
+    boolean attachAssigned = isParameterAssigned(assignedParameters, "ipcSocketFile");
+    if (!attachAssigned) {
+      if (isParameterAssigned(assignedParameters, "ipcExecCommand")) {
+        throw new ParameterException("--exec requires --attach <socket-path>");
+      }
+      return false;
+    }
+    if (StringUtils.isBlank(cmd.ipcSocketFile)) {
+      throw new ParameterException("--attach requires a non-empty <socket-path>");
+    }
+
+    List<String> unsupportedOptions = assignedParameters.stream()
+        .filter(pd -> !isAttachParameter(pd))
+        .map(ParameterDescription::getLongestName)
+        .collect(Collectors.toList());
+    if (!cmd.seedNodes.isEmpty()) {
+      unsupportedOptions.add("seedNode");
+    }
+    if (!unsupportedOptions.isEmpty()) {
+      Collections.sort(unsupportedOptions);
+      throw new ParameterException("--attach cannot be combined with: "
+          + String.join(", ", unsupportedOptions));
+    }
     ipcSocketFile = cmd.ipcSocketFile;
     ipcExecCommand = cmd.ipcExecCommand;
     if (StringUtils.isNotEmpty(cmd.logbackPath)) {
       PARAMETER.logbackPath = cmd.logbackPath;
     }
+    return true;
+  }
+
+  private static boolean isParameterAssigned(List<ParameterDescription> assignedParameters,
+      String fieldName) {
+    return assignedParameters.stream()
+        .anyMatch(pd -> fieldName.equals(pd.getParameterized().getName()));
+  }
+
+  private static boolean isAttachParameter(ParameterDescription parameter) {
+    String fieldName = parameter.getParameterized().getName();
+    return "ipcSocketFile".equals(fieldName)
+        || "ipcExecCommand".equals(fieldName)
+        || "logbackPath".equals(fieldName);
   }
 
   /**
@@ -798,14 +839,13 @@ public class Args extends CommonParameter {
    * Apply CLI parameters that were explicitly passed.
    * Only assigned parameters override Config values.
    */
-  private static void applyCLIParams(CLIParameter cmd, JCommander jc) {
-    Set<String> assigned = jc.getParameters().stream()
-        .filter(ParameterDescription::isAssigned)
+  private static void applyCLIParams(CLIParameter cmd,
+      List<ParameterDescription> assignedParameters) {
+    Set<String> assigned = assignedParameters.stream()
         .map(ParameterDescription::getLongestName)
         .collect(Collectors.toSet());
 
-    jc.getParameters().stream()
-        .filter(ParameterDescription::isAssigned)
+    assignedParameters.stream()
         .filter(pd -> {
           try {
             return CLIParameter.class.getDeclaredField(pd.getParameterized().getName())

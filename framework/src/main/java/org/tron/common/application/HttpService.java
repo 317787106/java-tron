@@ -17,7 +17,6 @@ package org.tron.common.application;
 
 import com.google.common.annotations.VisibleForTesting;
 import java.io.IOException;
-import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.util.concurrent.CompletableFuture;
 import javax.servlet.RequestDispatcher;
@@ -29,6 +28,7 @@ import org.eclipse.jetty.http.HttpStatus;
 import org.eclipse.jetty.server.ConnectionLimit;
 import org.eclipse.jetty.server.Request;
 import org.eclipse.jetty.server.Server;
+import org.eclipse.jetty.server.ServerConnector;
 import org.eclipse.jetty.server.handler.ErrorHandler;
 import org.eclipse.jetty.server.handler.SizeLimitHandler;
 import org.eclipse.jetty.servlet.ServletContextHandler;
@@ -80,11 +80,13 @@ public abstract class HttpService extends AbstractService {
   }
 
   protected void initServer() {
-    if (this.listenAddress == null) {
-      this.apiServer = new Server(this.port);
-    } else {
-      this.apiServer = new Server(new InetSocketAddress(this.listenAddress, this.port));
+    this.apiServer = new Server();
+    ServerConnector connector = new ServerConnector(this.apiServer);
+    connector.setPort(this.port);
+    if (this.listenAddress != null) {
+      connector.setHost(this.listenAddress);
     }
+    this.apiServer.addConnector(connector);
     int maxHttpConnectNumber = Args.getInstance().getMaxHttpConnectNumber();
     if (maxHttpConnectNumber > 0) {
       this.apiServer.addBean(new ConnectionLimit(maxHttpConnectNumber, this.apiServer));

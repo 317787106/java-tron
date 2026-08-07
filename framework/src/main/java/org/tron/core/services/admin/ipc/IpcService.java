@@ -5,15 +5,16 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.NullNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.googlecode.jsonrpc4j.JsonRpcServer;
-import java.io.BufferedReader;
+import java.io.BufferedInputStream;
 import java.io.BufferedWriter;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
-import java.io.InputStreamReader;
+import java.io.InputStream;
 import java.io.OutputStreamWriter;
 import java.lang.management.ManagementFactory;
+import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
@@ -34,6 +35,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.newsclub.net.unix.AFUNIXServerSocket;
 import org.newsclub.net.unix.AFUNIXSocket;
 import org.newsclub.net.unix.AFUNIXSocketAddress;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.tron.common.application.AbstractService;
 import org.tron.common.es.ExecutorServiceManager;
@@ -53,6 +55,8 @@ public class IpcService extends AbstractService {
   private static final String CLIENT_EXECUTOR_NAME = "admin-ipc-client";
   private static final int CLIENT_HANDLER_THREADS = 4;
   private static final int MAX_PENDING_CLIENTS = 16;
+  private static final int MAX_REQUEST_SIZE = 4 * 1024 * 1024;
+  private static final int CLIENT_IDLE_TIMEOUT_MILLIS = 10 * 60 * 1000;
 
   private final ExecutorService acceptorExecutor =
       ExecutorServiceManager.newSingleThreadExecutor(ACCEPTOR_EXECUTOR_NAME, true);
@@ -65,10 +69,20 @@ public class IpcService extends AbstractService {
   private AFUNIXServerSocket unixServerSocket;
   private Path socketFilePath;
   private final JsonRpcServer jsonRpcServer;
+  private final int clientIdleTimeoutMillis;
 
+  @Autowired
   public IpcService(AdminJsonRpc adminJsonRpc) {
+    this(adminJsonRpc, CLIENT_IDLE_TIMEOUT_MILLIS);
+  }
+
+  IpcService(AdminJsonRpc adminJsonRpc, int clientIdleTimeoutMillis) {
+    if (clientIdleTimeoutMillis <= 0) {
+      throw new IllegalArgumentException("IPC client idle timeout must be positive");
+    }
     enable = isFullNode() && Args.getInstance().isIpcEnable();
     jsonRpcServer = new JsonRpcServer(OBJECT_MAPPER, adminJsonRpc, AdminJsonRpc.class);
+    this.clientIdleTimeoutMillis = clientIdleTimeoutMillis;
   }
 
   @Override
@@ -129,6 +143,15 @@ public class IpcService extends AbstractService {
   }
 
   private void registerClient(AFUNIXSocket client) {
+    try {
+      client.setSoTimeout(clientIdleTimeoutMillis);
+    } catch (IOException e) {
+      closeClientSocket(client);
+      if (isRunning) {
+        logger.warn("Failed to configure IPC client idle timeout");
+      }
+      return;
+    }
     activeClientSockets.add(client);
     if (!isRunning) {
       closeAndRemoveClient(client);
@@ -154,13 +177,12 @@ public class IpcService extends AbstractService {
   }
 
   private void handleClient(AFUNIXSocket client) {
-    try (BufferedReader reader = new BufferedReader(
-        new InputStreamReader(client.getInputStream(), StandardCharsets.UTF_8));
+    try (BufferedInputStream input = new BufferedInputStream(client.getInputStream());
         BufferedWriter writer = new BufferedWriter(
             new OutputStreamWriter(client.getOutputStream(), StandardCharsets.UTF_8))) {
 
       String line;
-      while ((line = reader.readLine()) != null) {
+      while ((line = readRequest(input, MAX_REQUEST_SIZE)) != null) {
         String cmd = line.trim();
         logger.debug("Received IPC request");
         String response = handleCommand(cmd);
@@ -171,11 +193,38 @@ public class IpcService extends AbstractService {
           logger.debug("Sent IPC response");
         }
       }
+    } catch (SocketTimeoutException e) {
+      logger.debug("Closing IPC client after {} ms without input", clientIdleTimeoutMillis);
+    } catch (RequestTooLargeException e) {
+      logger.warn("IPC request exceeds maximum size of {} bytes", MAX_REQUEST_SIZE);
     } catch (IOException e) {
       if (isRunning) {
         logger.error("Client disconnected {}", client);
       }
     }
+  }
+
+  private String readRequest(InputStream input, int maxRequestSize) throws IOException {
+    ByteArrayOutputStream request = new ByteArrayOutputStream();
+    int value;
+    while ((value = input.read()) != -1) {
+      if (value == '\n') {
+        break;
+      }
+      if (request.size() >= maxRequestSize) {
+        throw new RequestTooLargeException();
+      }
+      request.write(value);
+    }
+    if (value == -1 && request.size() == 0) {
+      return null;
+    }
+    byte[] bytes = request.toByteArray();
+    int length = bytes.length;
+    if (length > 0 && bytes[length - 1] == '\r') {
+      length--;
+    }
+    return new String(bytes, 0, length, StandardCharsets.UTF_8);
   }
 
   String handleCommand(String jsonRequest) {
@@ -260,12 +309,12 @@ public class IpcService extends AbstractService {
     activeClientSockets.remove(client);
   }
 
-  static Path resolveSocketFilePath(CommonParameter parameter, String pid) {
+  private Path resolveSocketFilePath(CommonParameter parameter, String pid) {
     return Paths.get(parameter.getOutputDirectory(),
         "java-tron." + pid + ".sock");
   }
 
-  static void validateOutputDirectory(Path outputDirectory) throws IOException {
+  private void validateOutputDirectory(Path outputDirectory) throws IOException {
     if (outputDirectory == null || !Files.isDirectory(outputDirectory)) {
       throw new TronError("IPC output directory does not exist or is not a directory",
           ErrCode.API_SERVER_INIT);
@@ -277,7 +326,7 @@ public class IpcService extends AbstractService {
     }
   }
 
-  static void deleteStaleSocketFile(Path socketFilePath) throws IOException {
+  private void deleteStaleSocketFile(Path socketFilePath) throws IOException {
     if (!Files.exists(socketFilePath, LinkOption.NOFOLLOW_LINKS)) {
       return;
     }
@@ -290,13 +339,18 @@ public class IpcService extends AbstractService {
     Files.delete(socketFilePath);
   }
 
-  static void setOwnerOnlyPermissions(Path socketFilePath) throws IOException {
+  private void setOwnerOnlyPermissions(Path socketFilePath) throws IOException {
     Files.setPosixFilePermissions(socketFilePath,
         EnumSet.of(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE));
   }
 
-  public static String getPid() {
+  private String getPid() {
     String name = ManagementFactory.getRuntimeMXBean().getName();
     return name.split("@")[0];
+  }
+
+  private static final class RequestTooLargeException extends IOException {
+
+    private static final long serialVersionUID = 1L;
   }
 }
