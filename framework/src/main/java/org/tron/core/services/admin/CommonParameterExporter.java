@@ -38,7 +38,7 @@ public class CommonParameterExporter {
 
   Map<String, Object> export(CommonParameter parameter) {
     ObjectNode snapshot = OBJECT_MAPPER.createObjectNode();
-    Field[] fields = CommonParameter.class.getFields();
+    Field[] fields = parameter.getClass().getFields();
     Arrays.sort(fields, Comparator.comparing(Field::getName));
     for (Field field : fields) {
       if (!field.isAnnotationPresent(Exportable.class)) {

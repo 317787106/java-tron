@@ -58,8 +58,12 @@ public class IpcClient {
   private int requestId = 0;
 
   public IpcClient(String socketFilePath) {
+    this(socketFilePath, AdminJsonRpc.class);
+  }
+
+  IpcClient(String socketFilePath, Class<?> adminApi) {
     this.socketFilePath = socketFilePath;
-    this.adminCommands = collectAdminCommands();
+    this.adminCommands = collectAdminCommands(adminApi);
   }
 
   public static int start(String socketFilePath) {
@@ -77,27 +81,32 @@ public class IpcClient {
     }
   }
 
-  private Map<String, AdminCommand> collectAdminCommands() {
+  private Map<String, AdminCommand> collectAdminCommands(Class<?> adminApi) {
     Map<String, AdminCommand> commands = new HashMap<>();
-    for (Method method : AdminJsonRpc.class.getDeclaredMethods()) {
+    for (Method method : adminApi.getDeclaredMethods()) {
       JsonRpcMethod rpcMethod = method.getAnnotation(JsonRpcMethod.class);
       if (rpcMethod == null || rpcMethod.value() == null) {
         continue;
       }
 
       List<String> parameterNames = new ArrayList<>();
+      List<JavaType> parameterTypes = new ArrayList<>();
       Annotation[][] paramAnnotations = method.getParameterAnnotations();
-      for (Annotation[] annotations : paramAnnotations) {
-        for (Annotation anno : annotations) {
+      Type[] genericParameterTypes = method.getGenericParameterTypes();
+      for (int i = 0; i < paramAnnotations.length; i++) {
+        String parameterName = null;
+        for (Annotation anno : paramAnnotations[i]) {
           if (anno instanceof JsonRpcParam) {
-            parameterNames.add(((JsonRpcParam) anno).value());
+            parameterName = ((JsonRpcParam) anno).value();
+            break;
           }
         }
-      }
-
-      List<JavaType> parameterTypes = new ArrayList<>();
-      for (Type type : method.getGenericParameterTypes()) {
-        parameterTypes.add(OBJECT_MAPPER.getTypeFactory().constructType(type));
+        if (StringUtils.isEmpty(parameterName)) {
+          throw new IllegalStateException("Missing @JsonRpcParam on " + method.getName()
+              + " parameter " + i);
+        }
+        parameterNames.add(parameterName);
+        parameterTypes.add(OBJECT_MAPPER.getTypeFactory().constructType(genericParameterTypes[i]));
       }
 
       AdminCommand command = new AdminCommand(rpcMethod.value(), parameterNames, parameterTypes);
@@ -124,8 +133,7 @@ public class IpcClient {
       helpLines.add(formatUsage(adminCommands.get(command.toLowerCase(Locale.ROOT))));
     }
     helpLines.add("help [command]");
-    helpLines.add("exit");
-    helpLines.add("quit");
+    helpLines.add("exit/quit");
     return helpLines;
   }
 
@@ -258,7 +266,7 @@ public class IpcClient {
 
   private LineReader createLineReader(Terminal terminal) {
     Completer commandCompleter =
-        new IpcCommandCompleter(adminCommands.keySet().toArray(new String[0]));
+        new IpcCommandCompleter(getCompletionCommandNames());
     ArgumentCompleter completer = new ArgumentCompleter(
         commandCompleter,
         NullCompleter.INSTANCE
@@ -273,6 +281,13 @@ public class IpcClient {
         .option(LineReader.Option.HISTORY_IGNORE_DUPS, true)
         .option(LineReader.Option.HISTORY_REDUCE_BLANKS, true)
         .build();
+  }
+
+  String[] getCompletionCommandNames() {
+    return adminCommands.values().stream()
+        .map(command -> command.name)
+        .sorted()
+        .toArray(String[]::new);
   }
 
   void printWelcome(File socketFile) {
@@ -338,11 +353,15 @@ public class IpcClient {
   }
 
   List<String> parseCommandLine(String commandLine) {
-    if (commandLine == null || commandLine.trim().isEmpty()) {
+    if (commandLine == null) {
+      return Collections.emptyList();
+    }
+    String normalizedCommandLine = commandLine.trim();
+    if (normalizedCommandLine.isEmpty()) {
       return Collections.emptyList();
     }
     ParsedLine parsedLine = commandParser.parse(
-        commandLine, commandLine.length(), Parser.ParseContext.ACCEPT_LINE);
+        normalizedCommandLine, normalizedCommandLine.length(), Parser.ParseContext.ACCEPT_LINE);
     return parsedLine.words();
   }
 

@@ -45,6 +45,7 @@ import org.tron.core.config.args.Args;
 import org.tron.core.exception.TronError;
 import org.tron.core.exception.TronError.ErrCode;
 import org.tron.core.services.admin.AdminJsonRpc;
+import org.tron.core.services.jsonrpc.JsonRpcErrorResolver;
 
 @Component
 @Slf4j(topic = "API")
@@ -53,36 +54,28 @@ public class IpcService extends AbstractService {
   private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
   private static final String ACCEPTOR_EXECUTOR_NAME = "admin-ipc-acceptor";
   private static final String CLIENT_EXECUTOR_NAME = "admin-ipc-client";
-  private static final int CLIENT_HANDLER_THREADS = 4;
-  private static final int MAX_PENDING_CLIENTS = 16;
   private static final int MAX_REQUEST_SIZE = 4 * 1024 * 1024;
   private static final int CLIENT_IDLE_TIMEOUT_MILLIS = 10 * 60 * 1000;
 
   private final ExecutorService acceptorExecutor =
       ExecutorServiceManager.newSingleThreadExecutor(ACCEPTOR_EXECUTOR_NAME, true);
   private final ExecutorService clientExecutor =
-      ExecutorServiceManager.newThreadPoolExecutor(
-          CLIENT_HANDLER_THREADS, CLIENT_HANDLER_THREADS, 0L, TimeUnit.MILLISECONDS,
-          new ArrayBlockingQueue<>(MAX_PENDING_CLIENTS), CLIENT_EXECUTOR_NAME, true);
-  private final Set<AFUNIXSocket> activeClientSockets = ConcurrentHashMap.newKeySet();
+      ExecutorServiceManager.newThreadPoolExecutor(4, 16, 0L, TimeUnit.MILLISECONDS,
+          new ArrayBlockingQueue<>(16), CLIENT_EXECUTOR_NAME, true);
+
   private volatile boolean isRunning = true;
   private AFUNIXServerSocket unixServerSocket;
   private Path socketFilePath;
   private final JsonRpcServer jsonRpcServer;
-  private final int clientIdleTimeoutMillis;
+
+  private final Set<AFUNIXSocket> activeClientSockets = ConcurrentHashMap.newKeySet();
 
   @Autowired
   public IpcService(AdminJsonRpc adminJsonRpc) {
-    this(adminJsonRpc, CLIENT_IDLE_TIMEOUT_MILLIS);
-  }
-
-  IpcService(AdminJsonRpc adminJsonRpc, int clientIdleTimeoutMillis) {
-    if (clientIdleTimeoutMillis <= 0) {
-      throw new IllegalArgumentException("IPC client idle timeout must be positive");
-    }
     enable = isFullNode() && Args.getInstance().isIpcEnable();
     jsonRpcServer = new JsonRpcServer(OBJECT_MAPPER, adminJsonRpc, AdminJsonRpc.class);
-    this.clientIdleTimeoutMillis = clientIdleTimeoutMillis;
+    jsonRpcServer.setErrorResolver(JsonRpcErrorResolver.INSTANCE);
+    jsonRpcServer.setShouldLogInvocationErrors(false);
   }
 
   @Override
@@ -130,12 +123,18 @@ public class IpcService extends AbstractService {
         try {
           registerClient(unixServerSocket.accept());
         } catch (Throwable throwable) {
-          if (isRunning) {
-            logger.error("Handle IPC request error", throwable);
-          }
           ExitManager.findTronError(throwable).ifPresent(e -> {
             throw e;
           });
+          if (isRunning) {
+            logger.error("Handle IPC request error", throwable);
+            try {
+              TimeUnit.MILLISECONDS.sleep(1_000);
+            } catch (InterruptedException e) {
+              Thread.currentThread().interrupt();
+              break;
+            }
+          }
         }
       }
     };
@@ -144,7 +143,7 @@ public class IpcService extends AbstractService {
 
   private void registerClient(AFUNIXSocket client) {
     try {
-      client.setSoTimeout(clientIdleTimeoutMillis);
+      client.setSoTimeout(CLIENT_IDLE_TIMEOUT_MILLIS);
     } catch (IOException e) {
       closeClientSocket(client);
       if (isRunning) {
@@ -194,7 +193,7 @@ public class IpcService extends AbstractService {
         }
       }
     } catch (SocketTimeoutException e) {
-      logger.debug("Closing IPC client after {} ms without input", clientIdleTimeoutMillis);
+      logger.debug("Closing IPC client after {} ms without input", CLIENT_IDLE_TIMEOUT_MILLIS);
     } catch (RequestTooLargeException e) {
       logger.warn("IPC request exceeds maximum size of {} bytes", MAX_REQUEST_SIZE);
     } catch (IOException e) {

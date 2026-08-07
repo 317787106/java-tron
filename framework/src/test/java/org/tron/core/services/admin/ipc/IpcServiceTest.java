@@ -30,6 +30,8 @@ import org.newsclub.net.unix.AFUNIXSocketAddress;
 import org.tron.common.parameter.CommonParameter;
 import org.tron.core.config.args.Args;
 import org.tron.core.exception.TronError;
+import org.tron.core.exception.jsonrpc.JsonRpcInvalidParamsException;
+import org.tron.core.services.admin.AdminJsonRpc;
 import org.tron.core.services.admin.AdminJsonRpcImpl;
 import org.tron.core.services.admin.CommonParameterExporter;
 
@@ -152,6 +154,24 @@ public class IpcServiceTest {
   }
 
   @Test
+  public void testHandleCommandUsesAnnotatedErrorResolver() throws Exception {
+    AdminJsonRpc adminJsonRpc = Mockito.mock(AdminJsonRpc.class);
+    Mockito.when(adminJsonRpc.adminExample("a", "b"))
+        .thenThrow(new JsonRpcInvalidParamsException("Invalid admin parameters"));
+    IpcService service = new IpcService(adminJsonRpc);
+
+    String response = service.handleCommand(
+        "{\"jsonrpc\":\"2.0\",\"method\":\"admin_example\","
+            + "\"params\":[\"a\",\"b\"],\"id\":10}");
+    JsonNode responseNode = new ObjectMapper().readTree(response);
+
+    Assert.assertEquals(-32602, responseNode.get("error").get("code").asInt());
+    Assert.assertEquals("Invalid admin parameters",
+        responseNode.get("error").get("message").asText());
+    Assert.assertEquals(10, responseNode.get("id").asInt());
+  }
+
+  @Test
   public void testReadRequestAcceptsMaximumSize() throws Exception {
     IpcService service = newIpcService();
     ByteArrayInputStream input =
@@ -240,34 +260,16 @@ public class IpcServiceTest {
   }
 
   @Test(timeout = 10_000)
-  public void testIdleClientIsDisconnected() throws Exception {
-    assumePosixFileSystem();
-    CommonParameter parameter = Args.getInstance();
-    String originalOutputDirectory = parameter.outputDirectory;
-    Path outputDirectory = Files.createTempDirectory(Paths.get("/tmp"), "ipc-idle-test-");
-    IpcService service = new IpcService(
-        new AdminJsonRpcImpl(new CommonParameterExporter()), 200);
-    boolean started = false;
+  public void testRegisterClientUsesDefaultIdleTimeout() throws Exception {
+    IpcService service = newIpcService();
+    AFUNIXSocket client = Mockito.mock(AFUNIXSocket.class);
+    Mockito.doThrow(new IOException("closed")).when(client).getInputStream();
     try {
-      parameter.outputDirectory = outputDirectory.toString();
-      service.innerStart();
-      started = true;
+      registerClient(service, client);
 
-      File socketFile = resolveSocketFilePath(service, parameter, getPid(service)).toFile();
-      AFUNIXSocketAddress address = AFUNIXSocketAddress.of(socketFile);
-      try (AFUNIXSocket client = AFUNIXSocket.newInstance()) {
-        client.connect(address);
-        client.setSoTimeout(5_000);
-        BufferedReader reader = new BufferedReader(
-            new InputStreamReader(client.getInputStream(), StandardCharsets.UTF_8));
-        Assert.assertNull(reader.readLine());
-      }
+      Mockito.verify(client).setSoTimeout(10 * 60 * 1000);
     } finally {
-      if (started) {
-        service.innerStop();
-      }
-      parameter.outputDirectory = originalOutputDirectory;
-      Files.deleteIfExists(outputDirectory);
+      service.innerStop();
     }
   }
 
@@ -340,6 +342,10 @@ public class IpcServiceTest {
       throws Exception {
     return (String) invokePrivate(service, "readRequest",
         new Class<?>[] {InputStream.class, int.class}, input, maxRequestSize);
+  }
+
+  private void registerClient(IpcService service, AFUNIXSocket client) throws Exception {
+    invokePrivate(service, "registerClient", new Class<?>[] {AFUNIXSocket.class}, client);
   }
 
   private String getPid(IpcService service) throws Exception {

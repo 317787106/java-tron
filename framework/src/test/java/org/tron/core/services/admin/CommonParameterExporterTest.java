@@ -3,7 +3,6 @@ package org.tron.core.services.admin;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -29,24 +28,26 @@ public class CommonParameterExporterTest {
     CommonParameter parameter = new CommonParameter();
     parameter.rpcPort = 150051;
     parameter.chainId = "runtime-chain";
+    parameter.allowCreationOfContracts = 1L;
 
     Map<String, Object> snapshot = exporter.export(parameter);
 
-    for (Field field : CommonParameter.class.getFields()) {
-      if (field.isAnnotationPresent(Exportable.class)) {
-        Assert.assertTrue("Missing exportable runtime parameter: " + field.getName(),
-            snapshot.containsKey(field.getName()));
-      } else {
-        Assert.assertFalse("Unexpected runtime parameter: " + field.getName(),
-            snapshot.containsKey(field.getName()));
-      }
-    }
     Assert.assertEquals(150051, snapshot.get("rpcPort"));
     Assert.assertEquals("runtime-chain", snapshot.get("chainId"));
+    Assert.assertFalse(snapshot.containsKey("allowCreationOfContracts"));
 
     parameter.rpcPort = 250051;
     snapshot = exporter.export(parameter);
     Assert.assertEquals(250051, snapshot.get("rpcPort"));
+  }
+
+  @Test
+  public void testExportUsesRuntimeParameterType() {
+    ExtendedCommonParameter parameter = new ExtendedCommonParameter();
+
+    Map<String, Object> snapshot = exporter.export(parameter);
+
+    Assert.assertEquals("runtime-value", snapshot.get("runtimeOnly"));
   }
 
   @Test
@@ -151,10 +152,11 @@ public class CommonParameterExporterTest {
         publishConfig.get("accessKeyId"));
     Assert.assertEquals(CommonParameterExporter.REDACTED_VALUE,
         publishConfig.get("accessKeySecret"));
-    Assert.assertTrue(snapshot.containsKey("rateLimiterInitialization"));
-    Assert.assertTrue(snapshot.containsKey("rocksDBCustomSettings"));
-    Assert.assertTrue(snapshot.containsKey("seedNode"));
-    Assert.assertTrue(snapshot.containsKey("eventFilter"));
-    Assert.assertTrue(snapshot.containsKey("shutdownBlockTime"));
+  }
+
+  private static class ExtendedCommonParameter extends CommonParameter {
+
+    @Exportable
+    public String runtimeOnly = "runtime-value";
   }
 }

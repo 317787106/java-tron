@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.type.TypeFactory;
+import com.googlecode.jsonrpc4j.JsonRpcMethod;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -35,16 +36,34 @@ public class IpcClientTest {
         "admin_example <param1:string> <param2:string>",
         "admin_getRuntimeParameters",
         "help [command]",
-        "exit",
-        "quit"), client.buildHelpLines());
+        "exit/quit"), client.buildHelpLines());
+  }
+
+  @Test
+  public void testCompletionUsesCanonicalMethodNames() {
+    IpcClient client = new IpcClient("unused");
+
+    Assert.assertArrayEquals(new String[] {
+        "admin_example", "admin_getRuntimeParameters"
+    }, client.getCompletionCommandNames());
+  }
+
+  @Test
+  public void testMissingJsonRpcParameterAnnotationIsRejected() {
+    try {
+      new IpcClient("unused", MissingParameterAnnotationApi.class);
+      Assert.fail("Expected an unannotated JSON-RPC parameter to be rejected");
+    } catch (IllegalStateException e) {
+      Assert.assertEquals("Missing @JsonRpcParam on invalid parameter 0", e.getMessage());
+    }
   }
 
   @Test
   public void testParseCommandLinePreservesQuotedArguments() {
     IpcClient client = new IpcClient("unused");
 
-    Assert.assertEquals(Arrays.asList("admin_example", "hello world", "second value"),
-        client.parseCommandLine("admin_example \"hello world\" 'second value'"));
+    Assert.assertEquals(Arrays.asList("admin_example", " hello world ", "second value"),
+        client.parseCommandLine(" \tadmin_example \" hello world \" 'second value'  "));
   }
 
   @Test
@@ -107,7 +126,7 @@ public class IpcClientTest {
     try {
       System.setOut(capturedOut);
       Assert.assertEquals(IpcClient.EXIT_SUCCESS,
-          new IpcClient("unused").runExec(socket, "admin_example \"hello world\" b"));
+          new IpcClient("unused").runExec(socket, "  admin_example \"hello world\" b \t"));
     } finally {
       System.setOut(originalOut);
       capturedOut.close();
@@ -279,5 +298,11 @@ public class IpcClientTest {
       Mockito.verify(reader, Mockito.never()).printAbove("");
       Mockito.verify(reader).printAbove("Disconnected from server.");
     }
+  }
+
+  private interface MissingParameterAnnotationApi {
+
+    @JsonRpcMethod("admin_invalid")
+    String invalid(String value);
   }
 }
