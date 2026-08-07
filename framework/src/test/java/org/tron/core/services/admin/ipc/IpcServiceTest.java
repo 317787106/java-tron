@@ -34,6 +34,7 @@ import org.tron.core.exception.TronError;
 import org.tron.core.exception.jsonrpc.JsonRpcInvalidParamsException;
 import org.tron.core.services.admin.AdminJsonRpc;
 import org.tron.core.services.admin.AdminJsonRpcImpl;
+import org.tron.core.services.admin.CommonParameterExporter;
 
 public class IpcServiceTest {
 
@@ -149,7 +150,7 @@ public class IpcServiceTest {
   @Test
   public void testHandleCommandReturnsSingleLineJsonResponse() throws Exception {
     IpcService service = new IpcService(
-        new AdminJsonRpcImpl());
+        new AdminJsonRpcImpl(new CommonParameterExporter()));
 
     String response = service.handleCommand(
         "{\"jsonrpc\":\"2.0\",\"method\":\"admin_example\","
@@ -163,7 +164,7 @@ public class IpcServiceTest {
   @Test
   public void testHandleCommandReturnsJsonRpcErrorOnDispatcherFailure() throws Exception {
     IpcService service = Mockito.spy(new IpcService(
-        new AdminJsonRpcImpl()));
+        new AdminJsonRpcImpl(new CommonParameterExporter())));
     Mockito.doThrow(new IOException("sensitive-detail"))
         .when(service).dispatchRequest(Mockito.any(ByteArrayInputStream.class),
             Mockito.any(ByteArrayOutputStream.class));
@@ -227,7 +228,7 @@ public class IpcServiceTest {
     String originalOutputDirectory = parameter.outputDirectory;
     Path outputDirectory = Files.createTempDirectory(Paths.get("/tmp"), "ipc-permission-test-");
     IpcService service = new IpcService(
-        new AdminJsonRpcImpl());
+        new AdminJsonRpcImpl(new CommonParameterExporter()));
     boolean started = false;
     Path socketFile = null;
     try {
@@ -252,7 +253,7 @@ public class IpcServiceTest {
     String originalOutputDirectory = parameter.outputDirectory;
     Path outputDirectory = Files.createTempDirectory(Paths.get("/tmp"), "ipc-multi-client-test-");
     IpcService service = new IpcService(
-        new AdminJsonRpcImpl());
+        new AdminJsonRpcImpl(new CommonParameterExporter()));
     boolean started = false;
     Path socketFile = null;
     try {
@@ -308,7 +309,7 @@ public class IpcServiceTest {
     String originalOutputDirectory = parameter.outputDirectory;
     Path outputDirectory = Files.createTempDirectory("ipc-test-");
     IpcService service = new IpcService(
-        new AdminJsonRpcImpl());
+        new AdminJsonRpcImpl(new CommonParameterExporter()));
     boolean started = false;
     Path socketFile = null;
     try {
@@ -369,7 +370,7 @@ public class IpcServiceTest {
   }
 
   private IpcService newIpcService() {
-    return new IpcService(new AdminJsonRpcImpl());
+    return new IpcService(new AdminJsonRpcImpl(new CommonParameterExporter()));
   }
 
   private void cleanupIpcService(IpcService service, boolean started, CommonParameter parameter,

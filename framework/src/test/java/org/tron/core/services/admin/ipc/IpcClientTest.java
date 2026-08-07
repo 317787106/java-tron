@@ -35,6 +35,7 @@ public class IpcClientTest {
 
     Assert.assertEquals(Arrays.asList(
         "admin_example <param1:string> <param2:string>",
+        "admin_getRuntimeParameters",
         "help [command]",
         "exit/quit"), client.buildHelpLines());
   }
@@ -44,7 +45,7 @@ public class IpcClientTest {
     IpcClient client = new IpcClient("unused");
 
     Assert.assertArrayEquals(new String[] {
-        "admin_example"
+        "admin_example", "admin_getRuntimeParameters"
     }, client.getCompletionCommandNames());
   }
 
