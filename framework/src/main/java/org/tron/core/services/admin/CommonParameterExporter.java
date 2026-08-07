@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.Iterator;
@@ -14,10 +15,14 @@ import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.TreeMap;
 import lombok.extern.slf4j.Slf4j;
+import org.iq80.leveldb.Options;
 import org.springframework.stereotype.Component;
 import org.tron.common.parameter.CommonParameter;
 import org.tron.common.parameter.Exportable;
+import org.tron.common.utils.Property;
+import org.tron.core.config.args.Storage;
 
 @Component
 @Slf4j(topic = "API")
@@ -55,15 +60,92 @@ public class CommonParameterExporter {
 
       try {
         Object target = Modifier.isStatic(field.getModifiers()) ? null : parameter;
-        JsonNode value = OBJECT_MAPPER.valueToTree(field.get(target));
+        JsonNode value = snapshotValue(field.get(target));
         snapshot.set(fieldName, sanitize(value));
-      } catch (IllegalAccessException | IllegalArgumentException e) {
-        logger.warn("Unable to export runtime parameter {}", fieldName);
+      } catch (IllegalAccessException | RuntimeException e) {
+        logExportFailure(fieldName, e);
         snapshot.put(fieldName, UNAVAILABLE_VALUE);
       }
     }
     return OBJECT_MAPPER.convertValue(snapshot,
         new TypeReference<LinkedHashMap<String, Object>>() { });
+  }
+
+  private JsonNode snapshotValue(Object value) {
+    if (value instanceof Storage) {
+      return snapshotStorage((Storage) value);
+    }
+    return OBJECT_MAPPER.valueToTree(value);
+  }
+
+  /**
+   * Builds an explicit snapshot because {@link Storage} contains runtime collaborators such as
+   * LevelDB {@link Options} that are not regular Jackson beans. Serializing the live object can
+   * fail and would also expose newly added third-party fields without an explicit review.
+   */
+  private ObjectNode snapshotStorage(Storage storage) {
+    ObjectNode snapshot = OBJECT_MAPPER.createObjectNode();
+    snapshot.put("dbDirectory", storage.getDbDirectory());
+    snapshot.put("dbEngine", storage.getDbEngine());
+    snapshot.put("dbSync", storage.isDbSync());
+    snapshot.put("maxFlushCount", storage.getMaxFlushCount());
+    snapshot.put("contractParseSwitch", storage.isContractParseSwitch());
+    snapshot.put("transactionHistorySwitch", storage.getTransactionHistorySwitch());
+    snapshot.put("checkpointVersion", storage.getCheckpointVersion());
+    snapshot.put("checkpointSync", storage.isCheckpointSync());
+    snapshot.put("estimatedBlockTransactions", storage.getEstimatedBlockTransactions());
+    snapshot.put("txCacheInitOptimization", storage.isTxCacheInitOptimization());
+    snapshot.set("cacheDbs", OBJECT_MAPPER.valueToTree(
+        new ArrayList<>(storage.getCacheDbs())));
+
+    Map<String, Property> propertyMap = storage.getPropertyMap();
+    if (propertyMap == null) {
+      snapshot.putNull("propertyMap");
+      return snapshot;
+    }
+    ObjectNode properties = snapshot.putObject("propertyMap");
+    for (Entry<String, Property> entry : new TreeMap<>(propertyMap).entrySet()) {
+      try {
+        properties.set(entry.getKey(), snapshotStorageProperty(entry.getValue()));
+      } catch (RuntimeException e) {
+        logExportFailure("storage.propertyMap entry", e);
+        properties.put(entry.getKey(), UNAVAILABLE_VALUE);
+      }
+    }
+    return snapshot;
+  }
+
+  /**
+   * Copies only stable property and database-option values so one unsupported runtime object does
+   * not make the entire storage section unavailable or expand the exported surface implicitly.
+   */
+  private ObjectNode snapshotStorageProperty(Property property) {
+    ObjectNode snapshot = OBJECT_MAPPER.createObjectNode();
+    snapshot.put("name", property.getName());
+    snapshot.put("path", property.getPath());
+    Options options = property.getDbOptions();
+    if (options == null) {
+      snapshot.putNull("dbOptions");
+      return snapshot;
+    }
+    ObjectNode optionSnapshot = snapshot.putObject("dbOptions");
+    optionSnapshot.put("createIfMissing", options.createIfMissing());
+    optionSnapshot.put("errorIfExists", options.errorIfExists());
+    optionSnapshot.put("writeBufferSize", options.writeBufferSize());
+    optionSnapshot.put("maxOpenFiles", options.maxOpenFiles());
+    optionSnapshot.put("blockRestartInterval", options.blockRestartInterval());
+    optionSnapshot.put("blockSize", options.blockSize());
+    optionSnapshot.put("compressionType", options.compressionType().name());
+    optionSnapshot.put("verifyChecksums", options.verifyChecksums());
+    optionSnapshot.put("cacheSize", options.cacheSize());
+    optionSnapshot.put("paranoidChecks", options.paranoidChecks());
+    return snapshot;
+  }
+
+  private void logExportFailure(String fieldName, Exception exception) {
+    logger.warn("Unable to export runtime parameter {}: {}", fieldName,
+        exception.getClass().getSimpleName());
+    logger.debug("Runtime parameter export failure for " + fieldName, exception);
   }
 
   JsonNode sanitize(JsonNode value) {

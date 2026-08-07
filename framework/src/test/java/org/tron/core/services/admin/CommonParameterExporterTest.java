@@ -8,12 +8,15 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import org.iq80.leveldb.Options;
 import org.junit.Assert;
 import org.junit.Test;
 import org.tron.common.args.GenesisBlock;
 import org.tron.common.logsfilter.EventPluginConfig;
 import org.tron.common.parameter.CommonParameter;
 import org.tron.common.parameter.Exportable;
+import org.tron.common.utils.Property;
+import org.tron.common.utils.ReflectUtils;
 import org.tron.core.config.args.Storage;
 import org.tron.p2p.P2pConfig;
 import org.tron.p2p.dns.update.PublishConfig;
@@ -152,6 +155,62 @@ public class CommonParameterExporterTest {
         publishConfig.get("accessKeyId"));
     Assert.assertEquals(CommonParameterExporter.REDACTED_VALUE,
         publishConfig.get("accessKeySecret"));
+  }
+
+  @Test
+  public void testExportStorageWithDatabaseOptions() {
+    CommonParameter parameter = new CommonParameter();
+    Storage storage = new Storage();
+    storage.setDbDirectory("database");
+    storage.setDbEngine("LEVELDB");
+    Property property = new Property();
+    property.setName("account");
+    property.setPath("account-data");
+    property.setDbOptions(new Options()
+        .createIfMissing(true)
+        .cacheSize(4_096L)
+        .writeBufferSize(8_192)
+        .maxOpenFiles(128)
+        .blockSize(1_024));
+    ReflectUtils.setFieldValue(storage, "propertyMap",
+        Collections.singletonMap("account", property));
+    parameter.storage = storage;
+
+    Map<String, Object> snapshot = exporter.export(parameter);
+
+    Map<?, ?> storageSnapshot = (Map<?, ?>) snapshot.get("storage");
+    Assert.assertEquals("database", storageSnapshot.get("dbDirectory"));
+    Map<?, ?> propertyMap = (Map<?, ?>) storageSnapshot.get("propertyMap");
+    Map<?, ?> propertySnapshot = (Map<?, ?>) propertyMap.get("account");
+    Assert.assertEquals("account-data", propertySnapshot.get("path"));
+    Map<?, ?> optionSnapshot = (Map<?, ?>) propertySnapshot.get("dbOptions");
+    Assert.assertEquals(4_096L, optionSnapshot.get("cacheSize"));
+    Assert.assertEquals(8_192, optionSnapshot.get("writeBufferSize"));
+    Assert.assertEquals(128, optionSnapshot.get("maxOpenFiles"));
+    Assert.assertEquals(1_024, optionSnapshot.get("blockSize"));
+  }
+
+  @Test
+  public void testStoragePropertyFailureDoesNotHideStorage() {
+    CommonParameter parameter = new CommonParameter();
+    Storage storage = new Storage();
+    storage.setDbDirectory("database");
+    Property property = new Property() {
+      @Override
+      public Options getDbOptions() {
+        throw new IllegalStateException("unavailable options");
+      }
+    };
+    ReflectUtils.setFieldValue(storage, "propertyMap",
+        Collections.singletonMap("broken", property));
+    parameter.storage = storage;
+
+    Map<String, Object> snapshot = exporter.export(parameter);
+
+    Map<?, ?> storageSnapshot = (Map<?, ?>) snapshot.get("storage");
+    Assert.assertEquals("database", storageSnapshot.get("dbDirectory"));
+    Map<?, ?> propertyMap = (Map<?, ?>) storageSnapshot.get("propertyMap");
+    Assert.assertEquals("[UNAVAILABLE]", propertyMap.get("broken"));
   }
 
   private static class ExtendedCommonParameter extends CommonParameter {
