@@ -18,13 +18,11 @@ import java.util.Map.Entry;
 import java.util.TreeMap;
 import lombok.extern.slf4j.Slf4j;
 import org.iq80.leveldb.Options;
-import org.springframework.stereotype.Component;
 import org.tron.common.parameter.CommonParameter;
 import org.tron.common.parameter.Exportable;
 import org.tron.common.utils.Property;
 import org.tron.core.config.args.Storage;
 
-@Component
 @Slf4j(topic = "API")
 public class CommonParameterExporter {
 

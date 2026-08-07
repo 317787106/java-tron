@@ -7,11 +7,8 @@ import org.tron.core.exception.jsonrpc.JsonRpcInvalidParamsException;
 @Component
 public class AdminJsonRpcImpl implements AdminJsonRpc {
 
-  private final CommonParameterExporter commonParameterExporter;
-
-  public AdminJsonRpcImpl(CommonParameterExporter commonParameterExporter) {
-    this.commonParameterExporter = commonParameterExporter;
-  }
+  private final CommonParameterExporter commonParameterExporter =
+      new CommonParameterExporter();
 
   @Override
   public String adminExample(String param1, String param2) throws JsonRpcInvalidParamsException {
