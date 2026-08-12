@@ -27,11 +27,11 @@ import java.nio.file.attribute.PosixFilePermission;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.util.EnumSet;
 import java.util.Set;
-import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.SynchronousQueue;
 import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
 import org.newsclub.net.unix.AFUNIXServerSocket;
@@ -67,8 +67,8 @@ public class IpcService extends AbstractService {
   private final ExecutorService acceptorExecutor =
       ExecutorServiceManager.newSingleThreadExecutor(ACCEPTOR_EXECUTOR_NAME, true);
   private final ExecutorService clientExecutor =
-      ExecutorServiceManager.newThreadPoolExecutor(4, 16, 0L, TimeUnit.MILLISECONDS,
-          new ArrayBlockingQueue<>(16), CLIENT_EXECUTOR_NAME, true);
+      ExecutorServiceManager.newThreadPoolExecutor(4, 16, 60L, TimeUnit.SECONDS,
+          new SynchronousQueue<>(), CLIENT_EXECUTOR_NAME, true);
 
   private volatile boolean isRunning = true;
   private AFUNIXServerSocket unixServerSocket;
@@ -125,7 +125,7 @@ public class IpcService extends AbstractService {
           if (isRunning) {
             logger.error("Handle IPC request error", throwable);
             try {
-              TimeUnit.MILLISECONDS.sleep(1_000);
+              TimeUnit.MILLISECONDS.sleep(5_000);
             } catch (InterruptedException e) {
               Thread.currentThread().interrupt();
               break;

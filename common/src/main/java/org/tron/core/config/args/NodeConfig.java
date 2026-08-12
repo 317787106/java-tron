@@ -7,6 +7,7 @@ import com.typesafe.config.Config;
 import com.typesafe.config.ConfigBeanFactory;
 import com.typesafe.config.ConfigValueFactory;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import lombok.Getter;
 import lombok.Setter;
@@ -277,6 +278,7 @@ public class NodeConfig {
     private boolean enable = false;
     private String listenAddress = Constant.LOCAL_HOST;
     private int port = 8575;
+    private List<String> virtualHosts = new ArrayList<>(Collections.singletonList("localhost"));
   }
 
   @Getter

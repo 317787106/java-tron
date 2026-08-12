@@ -4,6 +4,7 @@ import com.google.common.annotations.VisibleForTesting;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import lombok.Getter;
 import lombok.Setter;
@@ -497,6 +498,9 @@ public class CommonParameter {
   @Getter
   @Setter
   public int adminListenPort = 8575;
+  @Getter
+  @Setter
+  public List<String> adminVirtualHosts = new ArrayList<>(Collections.singletonList("localhost"));
   @Getter
   @Setter
   public boolean ipcEnable = false;

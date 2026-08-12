@@ -156,7 +156,7 @@ public class IpcClient {
   int run(String execCommand) throws IOException {
     File socketFile = new File(socketFilePath);
     if (!socketFile.exists()) {
-      System.err.println("IPC socket file does not exist: " + socketFile.getName());
+      System.err.println("Error: IPC socket file does not exist: " + socketFile.getName());
       return EXIT_FAILURE;
     }
     AFUNIXSocketAddress address = AFUNIXSocketAddress.of(socketFile);

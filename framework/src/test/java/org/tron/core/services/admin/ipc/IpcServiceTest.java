@@ -23,6 +23,8 @@ import java.nio.file.attribute.PosixFilePermission;
 import java.util.Arrays;
 import java.util.EnumSet;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import org.junit.Assert;
 import org.junit.Assume;
 import org.junit.Test;
@@ -444,6 +446,39 @@ public class IpcServiceTest {
 
       Mockito.verify(client).setSoTimeout(10 * 60 * 1000);
     } finally {
+      service.innerStop();
+    }
+  }
+
+  @Test(timeout = 10_000)
+  public void testRejectsClientImmediatelyWhenAllHandlersAreBusy() throws Exception {
+    IpcService service = newIpcService();
+    CountDownLatch handlersStarted = new CountDownLatch(16);
+    CountDownLatch releaseHandlers = new CountDownLatch(1);
+    try {
+      for (int i = 0; i < 16; i++) {
+        AFUNIXSocket client = Mockito.mock(AFUNIXSocket.class);
+        Mockito.when(client.getInputStream()).thenAnswer(invocation -> {
+          handlersStarted.countDown();
+          try {
+            releaseHandlers.await();
+          } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+          }
+          throw new IOException("closed");
+        });
+        registerClient(service, client);
+      }
+      Assert.assertTrue("Expected all IPC handlers to start without queueing",
+          handlersStarted.await(5, TimeUnit.SECONDS));
+
+      AFUNIXSocket rejectedClient = Mockito.mock(AFUNIXSocket.class);
+      registerClient(service, rejectedClient);
+
+      Mockito.verify(rejectedClient).close();
+      Assert.assertFalse(getActiveClientSockets(service).contains(rejectedClient));
+    } finally {
+      releaseHandlers.countDown();
       service.innerStop();
     }
   }

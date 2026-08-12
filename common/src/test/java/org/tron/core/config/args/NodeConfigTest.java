@@ -7,6 +7,8 @@ import static org.junit.Assert.assertTrue;
 
 import com.typesafe.config.Config;
 import com.typesafe.config.ConfigFactory;
+import java.util.Arrays;
+import java.util.Collections;
 import org.junit.Test;
 import org.tron.core.exception.TronError;
 
@@ -35,6 +37,8 @@ public class NodeConfigTest {
     assertFalse(nc.getAdmin().getRpc().isEnable());
     assertEquals("127.0.0.1", nc.getAdmin().getRpc().getListenAddress());
     assertEquals(8575, nc.getAdmin().getRpc().getPort());
+    assertEquals(Collections.singletonList("localhost"),
+        nc.getAdmin().getRpc().getVirtualHosts());
     // reference.conf matches code default: discovery disabled when not configured
     assertFalse(nc.isDiscoveryEnable());
     assertFalse(nc.isDiscoveryPersist());
@@ -88,13 +92,16 @@ public class NodeConfigTest {
   public void testAdminRpcAndIpcBinding() {
     Config config = withRef(
         "node.admin { ipc { enable = true, socketDirectory = \"/tmp/tron-ipc\" },"
-            + " rpc { enable = true, listenAddress = \"127.0.0.2\", port = 18575 } }");
+            + " rpc { enable = true, listenAddress = \"127.0.0.2\", port = 18575,"
+            + " virtualHosts = [\"admin.example.com\", \"localhost\"] } }");
     NodeConfig nc = NodeConfig.fromConfig(config);
     assertTrue(nc.getAdmin().getIpc().isEnable());
     assertEquals("/tmp/tron-ipc", nc.getAdmin().getIpc().getSocketDirectory());
     assertTrue(nc.getAdmin().getRpc().isEnable());
     assertEquals("127.0.0.2", nc.getAdmin().getRpc().getListenAddress());
     assertEquals(18575, nc.getAdmin().getRpc().getPort());
+    assertEquals(Arrays.asList("admin.example.com", "localhost"),
+        nc.getAdmin().getRpc().getVirtualHosts());
   }
 
   @Test
