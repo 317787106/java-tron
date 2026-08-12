@@ -502,6 +502,9 @@ public class CommonParameter {
   public boolean ipcEnable = false;
   @Getter
   @Setter
+  public String ipcSocketDirectory = "";
+  @Getter
+  @Setter
   public int maxTransactionPendingSize;
   @Getter
   @Setter

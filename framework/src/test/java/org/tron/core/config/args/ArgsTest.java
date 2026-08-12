@@ -371,16 +371,18 @@ public class ArgsTest {
   public void testAdminRpcAndIpcConfigBinding() {
     Map<String, String> override = new HashMap<>();
     override.put("storage.db.directory", "database");
-    override.put("node.ipcEnable", "true");
-    override.put("node.adminRpc.enable", "true");
-    override.put("node.adminRpc.listenAddress", "127.0.0.2");
-    override.put("node.adminRpc.port", "18575");
+    override.put("node.admin.ipc.enable", "true");
+    override.put("node.admin.ipc.socketDirectory", "/tmp/tron-ipc");
+    override.put("node.admin.rpc.enable", "true");
+    override.put("node.admin.rpc.listenAddress", "127.0.0.2");
+    override.put("node.admin.rpc.port", "18575");
     Config config = ConfigFactory.parseMap(override)
         .withFallback(ConfigFactory.defaultReference());
 
     try {
       Args.applyConfigParams(config);
       Assert.assertTrue(Args.getInstance().isIpcEnable());
+      Assert.assertEquals("/tmp/tron-ipc", Args.getInstance().getIpcSocketDirectory());
       Assert.assertTrue(Args.getInstance().isAdminRpcEnable());
       Assert.assertEquals("127.0.0.2", Args.getInstance().getAdminListenAddress());
       Assert.assertEquals(18575, Args.getInstance().getAdminListenPort());

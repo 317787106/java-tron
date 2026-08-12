@@ -39,7 +39,6 @@ public class NodeConfig {
   private int minParticipationRate = 0;
   private boolean openPrintLog = true;
   private boolean openTransactionSort = false;
-  private boolean ipcEnable = false;
   private int maxTps = 1000;
   private int maxBlockInvPerSecond = 10;
   private boolean openFullTcpDisconnect = false; //rename key
@@ -130,7 +129,7 @@ public class NodeConfig {
   private HttpConfig http = new HttpConfig();
   private RpcConfig rpc = new RpcConfig();
   private JsonRpcConfig jsonrpc = new JsonRpcConfig();
-  private AdminRpcConfig adminRpc = new AdminRpcConfig();
+  private AdminConfig admin = new AdminConfig();
   private NodeBackupConfig backup = new NodeBackupConfig();
   private DynamicConfigSection dynamicConfig = new DynamicConfigSection();
   private DnsConfig dns = new DnsConfig();
@@ -253,6 +252,22 @@ public class NodeConfig {
     private int maxAddressSize = 1000;
     private int maxLogFilterNum = 20000;
     private long maxMessageSize = 4194304;
+  }
+
+  @Getter
+  @Setter
+  public static class AdminConfig {
+
+    private AdminIpcConfig ipc = new AdminIpcConfig();
+    private AdminRpcConfig rpc = new AdminRpcConfig();
+  }
+
+  @Getter
+  @Setter
+  public static class AdminIpcConfig {
+
+    private boolean enable = false;
+    private String socketDirectory = "";
   }
 
   @Getter

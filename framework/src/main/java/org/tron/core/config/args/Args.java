@@ -625,11 +625,13 @@ public class Args extends CommonParameter {
     PARAMETER.jsonRpcMaxMessageSize = jsonrpc.getMaxMessageSize();
 
     // ---- Admin RPC / IPC ----
-    NodeConfig.AdminRpcConfig adminRpc = nc.getAdminRpc();
+    NodeConfig.AdminIpcConfig adminIpc = nc.getAdmin().getIpc();
+    NodeConfig.AdminRpcConfig adminRpc = nc.getAdmin().getRpc();
     PARAMETER.adminRpcEnable = adminRpc.isEnable();
     PARAMETER.adminListenAddress = adminRpc.getListenAddress();
     PARAMETER.adminListenPort = adminRpc.getPort();
-    PARAMETER.ipcEnable = nc.isIpcEnable();
+    PARAMETER.ipcEnable = adminIpc.isEnable();
+    PARAMETER.ipcSocketDirectory = adminIpc.getSocketDirectory();
 
     // ---- P2P sub-bean ----
     PARAMETER.nodeP2pVersion = nc.getP2p().getVersion();

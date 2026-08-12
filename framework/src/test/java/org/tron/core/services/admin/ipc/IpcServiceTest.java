@@ -22,13 +22,17 @@ import java.nio.file.Paths;
 import java.nio.file.attribute.PosixFilePermission;
 import java.util.Arrays;
 import java.util.EnumSet;
+import java.util.Set;
 import org.junit.Assert;
 import org.junit.Assume;
 import org.junit.Test;
+import org.mockito.MockedStatic;
 import org.mockito.Mockito;
+import org.newsclub.net.unix.AFUNIXServerSocket;
 import org.newsclub.net.unix.AFUNIXSocket;
 import org.newsclub.net.unix.AFUNIXSocketAddress;
 import org.tron.common.parameter.CommonParameter;
+import org.tron.core.Constant;
 import org.tron.core.config.args.Args;
 import org.tron.core.exception.TronError;
 import org.tron.core.exception.jsonrpc.JsonRpcInvalidParamsException;
@@ -41,30 +45,37 @@ public class IpcServiceTest {
   public void testResolveSocketFilePathUsesOutputDirectory() throws Exception {
     IpcService service = newIpcService();
     CommonParameter parameter = new CommonParameter();
-    parameter.outputDirectory = "node-output";
+    parameter.outputDirectory = "/tmp/node-output";
 
     Path socketFilePath = resolveSocketFilePath(service, parameter, "1234");
 
     Assert.assertEquals(
-        Paths.get("node-output", "java-tron.1234.sock").toAbsolutePath().normalize(),
+        Paths.get("/tmp/node-output", ".ipc", "1234.sock"),
         socketFilePath);
   }
 
   @Test
-  public void testResolveSocketFilePathFallsBackToTmpForLongOutputPath() throws Exception {
+  public void testResolveSocketFilePathRejectsLongOutputPath() throws Exception {
     IpcService service = newIpcService();
     CommonParameter parameter = new CommonParameter();
     parameter.outputDirectory = Paths.get("/tmp",
         "a-very-long-output-directory-name-that-makes-the-resulting-unix-domain-socket-path-"
             + "exceed-the-portable-limit").toString();
 
-    Path socketFilePath = resolveSocketFilePath(service, parameter, "1234");
-
-    Assert.assertEquals(Paths.get("/tmp", "java-tron.1234.sock"), socketFilePath);
+    try {
+      resolveSocketFilePath(service, parameter, "1234");
+      Assert.fail("Expected an overlong IPC socket path to be rejected");
+    } catch (TronError e) {
+      Path expectedSocketFile = Paths.get(parameter.outputDirectory, ".ipc", "1234.sock")
+          .toAbsolutePath().normalize();
+      Assert.assertTrue(e.getMessage().contains("exceeding the portable limit of 100 bytes"));
+      Assert.assertTrue(e.getMessage().contains("node.admin.ipc.socketDirectory"));
+      Assert.assertTrue(e.getMessage().contains(expectedSocketFile.toString()));
+    }
   }
 
   @Test
-  public void testResolveSocketFilePathCountsEncodedBytes() throws Exception {
+  public void testResolveSocketFilePathRejectsEncodedPathOverLimit() throws Exception {
     IpcService service = newIpcService();
     CommonParameter parameter = new CommonParameter();
     StringBuilder outputDirectory = new StringBuilder("/tmp/");
@@ -73,74 +84,149 @@ public class IpcServiceTest {
     }
     parameter.outputDirectory = outputDirectory.toString();
 
-    Path socketFilePath = resolveSocketFilePath(service, parameter, "1234");
-
-    Assert.assertEquals(Paths.get("/tmp", "java-tron.1234.sock"), socketFilePath);
+    try {
+      resolveSocketFilePath(service, parameter, "1234");
+      Assert.fail("Expected the encoded IPC socket path length to be checked");
+    } catch (TronError e) {
+      Assert.assertTrue(e.getMessage().contains("exceeding the portable limit of 100 bytes"));
+    }
   }
 
   @Test
-  public void testValidateOutputDirectoryRejectsMissingDirectory() throws Exception {
+  public void testResolveSocketFilePathUsesConfiguredDirectory() throws Exception {
     IpcService service = newIpcService();
-    Path outputDirectory = Files.createTempDirectory("ipc-missing-output-test-");
-    Files.delete(outputDirectory);
+    CommonParameter parameter = new CommonParameter();
+    parameter.outputDirectory = "node-output";
+    parameter.ipcSocketDirectory = "/tmp/tron-ipc";
+
+    Path socketFilePath = resolveSocketFilePath(service, parameter, "1234");
+
+    Assert.assertEquals(Paths.get("/tmp/tron-ipc/.ipc/1234.sock"),
+        socketFilePath);
+  }
+
+  @Test
+  public void testResolveSocketFilePathRejectsRelativeConfiguredDirectory() throws Exception {
+    IpcService service = newIpcService();
+    CommonParameter parameter = new CommonParameter();
+    parameter.ipcSocketDirectory = "relative-ipc";
 
     try {
-      validateOutputDirectory(service, outputDirectory);
-      Assert.fail("Expected a missing output directory to be rejected");
+      resolveSocketFilePath(service, parameter, "1234");
+      Assert.fail("Expected a relative IPC socket directory to be rejected");
     } catch (TronError e) {
-      Assert.assertEquals("IPC output directory does not exist or is not a directory",
+      Assert.assertEquals("node.admin.ipc.socketDirectory must be an absolute path",
           e.getMessage());
     }
   }
 
   @Test
-  public void testDeleteStaleSocketFileRejectsRegularFile() throws Exception {
+  public void testResolveSocketFilePathRejectsLongConfiguredDirectory() throws Exception {
+    IpcService service = newIpcService();
+    CommonParameter parameter = new CommonParameter();
+    parameter.outputDirectory = "/tmp";
+    parameter.ipcSocketDirectory = Paths.get("/tmp",
+        "a-very-long-explicit-ipc-directory-that-makes-the-resulting-unix-domain-socket-path-"
+            + "exceed-the-portable-limit").toString();
+
+    try {
+      resolveSocketFilePath(service, parameter, "1234");
+      Assert.fail("Expected an overlong configured IPC socket path to be rejected");
+    } catch (TronError e) {
+      Path expectedSocketFile = Paths.get(parameter.ipcSocketDirectory, ".ipc", "1234.sock")
+          .toAbsolutePath().normalize();
+      Assert.assertTrue(e.getMessage().contains("exceeding the portable limit of 100 bytes"));
+      Assert.assertTrue(e.getMessage().contains("node.admin.ipc.socketDirectory"));
+      Assert.assertTrue(e.getMessage().contains(expectedSocketFile.toString()));
+    }
+  }
+
+  @Test
+  public void testValidateSocketRootDirectoryRejectsMissingDirectory() throws Exception {
+    IpcService service = newIpcService();
+    Path outputDirectory = Files.createTempDirectory("ipc-missing-output-test-");
+    Files.delete(outputDirectory);
+
+    try {
+      validateSocketRootDirectory(service, outputDirectory);
+      Assert.fail("Expected a missing output directory to be rejected");
+    } catch (TronError e) {
+      Assert.assertEquals("IPC socket root directory does not exist or is not a directory",
+          e.getMessage());
+    }
+  }
+
+  @Test
+  public void testRecreateSocketDirectoryRejectsRegularFile() throws Exception {
     IpcService service = newIpcService();
     Path outputDirectory = Files.createTempDirectory("ipc-regular-file-test-");
-    Path socketFile = outputDirectory.resolve("java-tron.1234.sock");
-    Files.createFile(socketFile);
+    Path socketDirectory = outputDirectory.resolve(".ipc");
+    Files.createFile(socketDirectory);
     try {
-      deleteStaleSocketFile(service, socketFile);
-      Assert.fail("Expected a regular file to be preserved");
+      recreateSocketDirectory(service, socketDirectory);
+      Assert.fail("Expected a regular file at the reserved directory path to be preserved");
     } catch (TronError e) {
-      Assert.assertEquals("Refusing to replace a non-socket IPC endpoint", e.getMessage());
-      Assert.assertTrue(Files.isRegularFile(socketFile, LinkOption.NOFOLLOW_LINKS));
+      Assert.assertEquals("Refusing to replace a non-directory IPC path", e.getMessage());
+      Assert.assertTrue(Files.isRegularFile(socketDirectory, LinkOption.NOFOLLOW_LINKS));
     } finally {
-      Files.deleteIfExists(socketFile);
+      Files.deleteIfExists(socketDirectory);
       Files.deleteIfExists(outputDirectory);
     }
   }
 
   @Test
-  public void testDeleteStaleSocketFileRejectsSymbolicLink() throws Exception {
+  public void testRecreateSocketDirectoryRejectsSymbolicLink() throws Exception {
     assumePosixFileSystem();
     IpcService service = newIpcService();
     Path outputDirectory = Files.createTempDirectory("ipc-symbolic-link-test-");
     Path targetFile = outputDirectory.resolve("target");
-    Path socketFile = outputDirectory.resolve("java-tron.1234.sock");
+    Path socketDirectory = outputDirectory.resolve(".ipc");
     Files.createFile(targetFile);
-    Files.createSymbolicLink(socketFile, targetFile.getFileName());
+    Files.createSymbolicLink(socketDirectory, targetFile.getFileName());
     try {
-      deleteStaleSocketFile(service, socketFile);
+      recreateSocketDirectory(service, socketDirectory);
       Assert.fail("Expected a symbolic link to be preserved");
     } catch (TronError e) {
-      Assert.assertEquals("Refusing to replace a non-socket IPC endpoint", e.getMessage());
-      Assert.assertTrue(Files.isSymbolicLink(socketFile));
+      Assert.assertEquals("Refusing to replace a non-directory IPC path", e.getMessage());
+      Assert.assertTrue(Files.isSymbolicLink(socketDirectory));
       Assert.assertTrue(Files.exists(targetFile));
     } finally {
-      Files.deleteIfExists(socketFile);
+      Files.deleteIfExists(socketDirectory);
       Files.deleteIfExists(targetFile);
       Files.deleteIfExists(outputDirectory);
     }
   }
 
   @Test
-  public void testValidateOutputDirectorySupportsPosixPermissions() throws Exception {
+  public void testRecreateSocketDirectoryRemovesStaleFilesAndUsesOwnerOnlyPermissions()
+      throws Exception {
+    assumePosixFileSystem();
+    IpcService service = newIpcService();
+    Path outputDirectory = Files.createTempDirectory("ipc-stale-directory-test-");
+    Path socketDirectory = Files.createDirectory(outputDirectory.resolve(".ipc"));
+    Files.createFile(socketDirectory.resolve("1234.sock"));
+    try {
+      recreateSocketDirectory(service, socketDirectory);
+
+      Assert.assertTrue(Files.isDirectory(socketDirectory));
+      Assert.assertEquals(
+          EnumSet.of(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE,
+              PosixFilePermission.OWNER_EXECUTE),
+          Files.getPosixFilePermissions(socketDirectory));
+      Assert.assertFalse(Files.exists(socketDirectory.resolve("1234.sock")));
+    } finally {
+      Files.deleteIfExists(socketDirectory);
+      Files.deleteIfExists(outputDirectory);
+    }
+  }
+
+  @Test
+  public void testValidateSocketRootDirectorySupportsPosixPermissions() throws Exception {
     assumePosixFileSystem();
     IpcService service = newIpcService();
     Path outputDirectory = Files.createTempDirectory("ipc-posix-output-test-");
     try {
-      validateOutputDirectory(service, outputDirectory);
+      validateSocketRootDirectory(service, outputDirectory);
     } finally {
       Files.deleteIfExists(outputDirectory);
     }
@@ -200,6 +286,26 @@ public class IpcServiceTest {
   }
 
   @Test
+  public void testIpcMapperRejectsExcessiveNesting() throws Exception {
+    StringBuilder request = new StringBuilder();
+    for (int i = 0; i <= Constant.MAX_NESTING_DEPTH; i++) {
+      request.append('[');
+    }
+    request.append('0');
+    for (int i = 0; i <= Constant.MAX_NESTING_DEPTH; i++) {
+      request.append(']');
+    }
+
+    ObjectMapper mapper = getStaticObjectMapper("OBJECT_MAPPER");
+    try {
+      mapper.readTree(request.toString());
+      Assert.fail("Expected excessive IPC JSON nesting to be rejected");
+    } catch (IOException e) {
+      Assert.assertTrue(e.getMessage().contains("nesting depth"));
+    }
+  }
+
+  @Test
   public void testReadRequestAcceptsMaximumSize() throws Exception {
     IpcService service = newIpcService();
     int maxRequestSize = getStaticIntField("MAX_REQUEST_SIZE");
@@ -242,6 +348,47 @@ public class IpcServiceTest {
     } finally {
       cleanupIpcService(service, started, parameter, originalOutputDirectory, socketFile,
           outputDirectory);
+    }
+  }
+
+  @Test(timeout = 10_000)
+  public void testInnerStartCleansSocketWhenPermissionUpdateFails() throws Exception {
+    assumePosixFileSystem();
+    CommonParameter parameter = Args.getInstance();
+    String originalOutputDirectory = parameter.outputDirectory;
+    String originalSocketDirectory = parameter.ipcSocketDirectory;
+    Path socketDirectory = Files.createTempDirectory(Paths.get("/tmp"), "ipc-perm-fail-");
+    IpcService service = newIpcService();
+    Path socketFile = null;
+    try {
+      parameter.outputDirectory = socketDirectory.toString();
+      parameter.ipcSocketDirectory = "";
+      socketFile = resolveSocketFilePath(service, parameter, getPid(service));
+      Set<PosixFilePermission> permissions = EnumSet.of(PosixFilePermission.OWNER_READ,
+          PosixFilePermission.OWNER_WRITE);
+      try (MockedStatic<Files> files = Mockito.mockStatic(Files.class,
+          Mockito.CALLS_REAL_METHODS)) {
+        Path expectedSocketFile = socketFile;
+        files.when(() -> Files.setPosixFilePermissions(expectedSocketFile, permissions))
+            .thenThrow(new IOException("permission update failed"));
+
+        try {
+          service.innerStart();
+          Assert.fail("Expected the permission update failure to be preserved");
+        } catch (IOException e) {
+          Assert.assertEquals("permission update failed", e.getMessage());
+        }
+      }
+
+      Assert.assertFalse(Files.exists(socketFile));
+    } finally {
+      parameter.outputDirectory = originalOutputDirectory;
+      parameter.ipcSocketDirectory = originalSocketDirectory;
+      if (socketFile != null) {
+        Files.deleteIfExists(socketFile);
+        Files.deleteIfExists(socketFile.getParent());
+      }
+      Files.deleteIfExists(socketDirectory);
     }
   }
 
@@ -306,7 +453,7 @@ public class IpcServiceTest {
     assumePosixFileSystem();
     CommonParameter parameter = Args.getInstance();
     String originalOutputDirectory = parameter.outputDirectory;
-    Path outputDirectory = Files.createTempDirectory("ipc-test-");
+    Path outputDirectory = Files.createTempDirectory(Paths.get("/tmp"), "ipc-test-");
     IpcService service = new IpcService(
         new AdminJsonRpcImpl());
     boolean started = false;
@@ -345,12 +492,72 @@ public class IpcServiceTest {
     }
   }
 
+  @Test(timeout = 5_000)
+  public void testInnerStopContinuesCleanupAfterServerCloseFailure() throws Exception {
+    IpcService service = newIpcService();
+    AFUNIXServerSocket serverSocket = Mockito.mock(AFUNIXServerSocket.class);
+    AFUNIXSocket clientSocket = Mockito.mock(AFUNIXSocket.class);
+    Path socketRootDirectory = Files.createTempDirectory("ipc-stop-failure-test-");
+    Path socketDirectory = Files.createDirectory(socketRootDirectory.resolve(".ipc"));
+    Path socketFile = Files.createFile(socketDirectory.resolve("1234.sock"));
+    Mockito.doThrow(new IOException("server close failed")).when(serverSocket).close();
+    setField(service, "unixServerSocket", serverSocket);
+    setField(service, "socketFilePath", socketFile);
+    getActiveClientSockets(service).add(clientSocket);
+
+    try {
+      try {
+        service.innerStop();
+        Assert.fail("Expected the server socket close failure to be preserved");
+      } catch (IOException e) {
+        Assert.assertEquals("server close failed", e.getMessage());
+      }
+
+      Mockito.verify(clientSocket).shutdownInput();
+      Mockito.verify(clientSocket).shutdownOutput();
+      Mockito.verify(clientSocket).close();
+      Assert.assertFalse(Files.exists(socketFile));
+      Assert.assertFalse(Files.exists(socketDirectory));
+    } finally {
+      Files.deleteIfExists(socketFile);
+      Files.deleteIfExists(socketDirectory);
+      Files.deleteIfExists(socketRootDirectory);
+    }
+  }
+
+  @Test(timeout = 5_000)
+  public void testInnerStopSuppressesLaterCleanupFailure() throws Exception {
+    IpcService service = newIpcService();
+    AFUNIXServerSocket serverSocket = Mockito.mock(AFUNIXServerSocket.class);
+    Path socketRootDirectory = Files.createTempDirectory("ipc-stop-suppressed-test-");
+    Path socketDirectory = Files.createDirectory(
+        socketRootDirectory.resolve(".ipc"));
+    Path childFile = Files.createFile(socketDirectory.resolve("child"));
+    Mockito.doThrow(new IOException("server close failed")).when(serverSocket).close();
+    setField(service, "unixServerSocket", serverSocket);
+    setField(service, "socketFilePath", socketDirectory.resolve("1234.sock"));
+
+    try {
+      service.innerStop();
+      Assert.fail("Expected cleanup failures to be preserved");
+    } catch (IOException e) {
+      Assert.assertEquals("server close failed", e.getMessage());
+      Assert.assertEquals(1, e.getSuppressed().length);
+      Assert.assertTrue(e.getSuppressed()[0] instanceof IOException);
+    } finally {
+      Files.deleteIfExists(childFile);
+      Files.deleteIfExists(socketDirectory);
+      Files.deleteIfExists(socketRootDirectory);
+    }
+  }
+
   @Test
   public void testCleanupRestoresOutputDirectoryWhenStopFails() throws Exception {
     CommonParameter parameter = new CommonParameter();
     String originalOutputDirectory = parameter.outputDirectory;
     Path outputDirectory = Files.createTempDirectory("ipc-cleanup-test-");
-    Path socketFile = Files.createFile(outputDirectory.resolve("java-tron.1234.sock"));
+    Path socketDirectory = Files.createDirectory(outputDirectory.resolve(".ipc"));
+    Path socketFile = Files.createFile(socketDirectory.resolve("1234.sock"));
     parameter.outputDirectory = outputDirectory.toString();
     IpcService service = Mockito.mock(IpcService.class);
     Mockito.doThrow(new IOException("stop failed")).when(service).innerStop();
@@ -365,6 +572,7 @@ public class IpcServiceTest {
 
     Assert.assertEquals(originalOutputDirectory, parameter.outputDirectory);
     Assert.assertFalse(Files.exists(socketFile));
+    Assert.assertFalse(Files.exists(socketDirectory));
     Assert.assertFalse(Files.exists(outputDirectory));
   }
 
@@ -386,6 +594,7 @@ public class IpcServiceTest {
     try {
       if (socketFile != null) {
         Files.deleteIfExists(socketFile);
+        Files.deleteIfExists(socketFile.getParent());
       }
     } catch (IOException e) {
       failure = mergeCleanupFailure(failure, e);
@@ -414,13 +623,15 @@ public class IpcServiceTest {
         new Class<?>[] {CommonParameter.class, String.class}, parameter, pid);
   }
 
-  private void validateOutputDirectory(IpcService service, Path outputDirectory) throws Exception {
-    invokePrivate(service, "validateOutputDirectory", new Class<?>[] {Path.class},
+  private void validateSocketRootDirectory(IpcService service, Path outputDirectory)
+      throws Exception {
+    invokePrivate(service, "validateSocketRootDirectory", new Class<?>[] {Path.class},
         outputDirectory);
   }
 
-  private void deleteStaleSocketFile(IpcService service, Path socketFile) throws Exception {
-    invokePrivate(service, "deleteStaleSocketFile", new Class<?>[] {Path.class}, socketFile);
+  private void recreateSocketDirectory(IpcService service, Path socketDirectory) throws Exception {
+    invokePrivate(service, "recreateSocketDirectory", new Class<?>[] {Path.class},
+        socketDirectory);
   }
 
   private String readRequest(IpcService service, InputStream input) throws Exception {
@@ -434,12 +645,31 @@ public class IpcServiceTest {
     return field.getInt(null);
   }
 
-  private void registerClient(IpcService service, AFUNIXSocket client) throws Exception {
-    invokePrivate(service, "registerClient", new Class<?>[] {AFUNIXSocket.class}, client);
+  private ObjectMapper getStaticObjectMapper(String fieldName) throws Exception {
+    Field field = IpcService.class.getDeclaredField(fieldName);
+    field.setAccessible(true);
+    return (ObjectMapper) field.get(null);
+  }
+
+  @SuppressWarnings("unchecked")
+  private Set<AFUNIXSocket> getActiveClientSockets(IpcService service) throws Exception {
+    Field field = IpcService.class.getDeclaredField("activeClientSockets");
+    field.setAccessible(true);
+    return (Set<AFUNIXSocket>) field.get(service);
+  }
+
+  private void setField(IpcService service, String fieldName, Object value) throws Exception {
+    Field field = IpcService.class.getDeclaredField(fieldName);
+    field.setAccessible(true);
+    field.set(service, value);
   }
 
   private String getPid(IpcService service) throws Exception {
     return (String) invokePrivate(service, "getPid", new Class<?>[0]);
+  }
+
+  private void registerClient(IpcService service, AFUNIXSocket client) throws Exception {
+    invokePrivate(service, "registerClient", new Class<?>[] {AFUNIXSocket.class}, client);
   }
 
   private Object invokePrivate(IpcService service, String methodName, Class<?>[] parameterTypes,
