@@ -23,6 +23,7 @@ import org.tron.common.parameter.Exportable;
 import org.tron.common.utils.ByteArray;
 import org.tron.common.utils.Property;
 import org.tron.common.utils.ReflectUtils;
+import org.tron.common.utils.StringUtil;
 import org.tron.core.config.args.Storage;
 import org.tron.core.config.args.StorageConfig;
 import org.tron.p2p.P2pConfig;
@@ -207,11 +208,11 @@ public class CommonParameterExporterTest {
     Map<?, ?> assetSnapshot = (Map<?, ?>) ((List<?>) genesisSnapshot.get("assets")).get(0);
     Assert.assertEquals("Zion", assetSnapshot.get("accountName"));
     Assert.assertEquals("Normal", assetSnapshot.get("accountType"));
-    Assert.assertEquals(ByteArray.toHexString(accountAddress), assetSnapshot.get("address"));
+    Assert.assertEquals(StringUtil.encode58Check(accountAddress), assetSnapshot.get("address"));
     Assert.assertEquals(123456789L, assetSnapshot.get("balance"));
     Map<?, ?> witnessSnapshot =
         (Map<?, ?>) ((List<?>) genesisSnapshot.get("witnesses")).get(0);
-    Assert.assertEquals(ByteArray.toHexString(witnessAddress), witnessSnapshot.get("address"));
+    Assert.assertEquals(StringUtil.encode58Check(witnessAddress), witnessSnapshot.get("address"));
     Assert.assertEquals("https://witness.example.org", witnessSnapshot.get("url"));
     Assert.assertEquals(27L, witnessSnapshot.get("voteCount"));
   }

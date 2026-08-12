@@ -25,9 +25,9 @@ import org.tron.common.args.Witness;
 import org.tron.common.cache.CacheType;
 import org.tron.common.parameter.CommonParameter;
 import org.tron.common.parameter.Exportable;
-import org.tron.common.utils.ByteArray;
 import org.tron.common.utils.Property;
 import org.tron.common.utils.Sha256Hash;
+import org.tron.common.utils.StringUtil;
 import org.tron.core.config.args.Storage;
 import org.tron.core.config.args.StorageConfig;
 import org.tron.p2p.P2pConfig;
@@ -102,13 +102,13 @@ public class CommonParameterExporter {
       ObjectNode asset = assets.addObject();
       asset.put("accountName", account.getAccountName().toStringUtf8());
       asset.put("accountType", account.getAccountType().name());
-      asset.put("address", ByteArray.toHexString(account.getAddress()));
+      asset.put("address", StringUtil.encode58Check(account.getAddress()));
       asset.put("balance", account.getBalance());
     }
     ArrayNode witnesses = snapshot.putArray("witnesses");
     for (Witness witness : genesisBlock.getWitnesses()) {
       ObjectNode witnessSnapshot = witnesses.addObject();
-      witnessSnapshot.put("address", ByteArray.toHexString(witness.getAddress()));
+      witnessSnapshot.put("address", StringUtil.encode58Check(witness.getAddress()));
       witnessSnapshot.put("url", witness.getUrl());
       witnessSnapshot.put("voteCount", witness.getVoteCount());
     }
