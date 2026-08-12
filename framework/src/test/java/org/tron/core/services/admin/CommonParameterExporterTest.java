@@ -3,6 +3,9 @@ package org.tron.core.services.admin;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.typesafe.config.ConfigFactory;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -11,13 +14,17 @@ import java.util.Map;
 import org.iq80.leveldb.Options;
 import org.junit.Assert;
 import org.junit.Test;
+import org.tron.common.args.Account;
 import org.tron.common.args.GenesisBlock;
+import org.tron.common.args.Witness;
 import org.tron.common.logsfilter.EventPluginConfig;
 import org.tron.common.parameter.CommonParameter;
 import org.tron.common.parameter.Exportable;
+import org.tron.common.utils.ByteArray;
 import org.tron.common.utils.Property;
 import org.tron.common.utils.ReflectUtils;
 import org.tron.core.config.args.Storage;
+import org.tron.core.config.args.StorageConfig;
 import org.tron.p2p.P2pConfig;
 import org.tron.p2p.dns.update.PublishConfig;
 
@@ -81,7 +88,9 @@ public class CommonParameterExporterTest {
         "allowTvmCancun", "allowTvmBlob", "unfreezeDelayDays",
         "allowAccountAssetOptimization", "allowAssetOptimization", "allowNewReward",
         "memoFee", "allowDelegateOptimization", "allowDynamicEnergy",
-        "dynamicEnergyThreshold", "dynamicEnergyIncreaseFactor", "dynamicEnergyMaxFactor");
+        "dynamicEnergyThreshold", "dynamicEnergyIncreaseFactor", "dynamicEnergyMaxFactor",
+        "maintenanceTimeInterval", "proposalExpireTime", "allowCancelAllUnfreezeV2",
+        "maxCreateAccountTxSize");
 
     for (String fieldName : committeeParameters) {
       Assert.assertFalse("Committee parameter must not be exported: " + fieldName,
@@ -137,6 +146,13 @@ public class CommonParameterExporterTest {
     parameter.genesisBlock = GenesisBlock.getDefault();
     parameter.p2pConfig = new P2pConfig();
     parameter.p2pConfig.setIp("127.0.0.1");
+    parameter.p2pConfig.setSeedNodes(Collections.singletonList(
+        InetSocketAddress.createUnresolved("seed.example.org", 18888)));
+    parameter.p2pConfig.setActiveNodes(Collections.singletonList(
+        InetSocketAddress.createUnresolved("active.example.org", 18888)));
+    parameter.p2pConfig.setTrustNodes(Collections.singletonList(
+        InetAddress.getLoopbackAddress()));
+    parameter.p2pConfig.setNodeID(new byte[] {1, 2, 3});
     parameter.p2pConfig.setPublishConfig(parameter.dnsPublishConfig);
 
     Map<String, Object> snapshot = exporter.export(parameter);
@@ -150,11 +166,54 @@ public class CommonParameterExporterTest {
     Assert.assertEquals("0", ((Map<?, ?>) snapshot.get("genesisBlock")).get("number"));
     Map<?, ?> p2pConfig = (Map<?, ?>) snapshot.get("p2pConfig");
     Assert.assertEquals("127.0.0.1", p2pConfig.get("ip"));
+    Assert.assertFalse(p2pConfig.containsKey("seedNodes"));
+    Assert.assertFalse(p2pConfig.containsKey("activeNodes"));
+    Assert.assertFalse(p2pConfig.containsKey("trustNodes"));
+    Assert.assertFalse(p2pConfig.containsKey("nodeID"));
     Map<?, ?> publishConfig = (Map<?, ?>) p2pConfig.get("publishConfig");
     Assert.assertEquals(CommonParameterExporter.REDACTED_VALUE,
         publishConfig.get("accessKeyId"));
     Assert.assertEquals(CommonParameterExporter.REDACTED_VALUE,
         publishConfig.get("accessKeySecret"));
+    Assert.assertEquals("nodes.example.org", publishConfig.get("dnsDomain"));
+  }
+
+  @Test
+  public void testExportGenesisBlockUsesConfigurationFormats() {
+    byte[] accountAddress = ByteArray.fromHexString(
+        "410000000000000000000000000000000000000001");
+    Account account = new Account();
+    account.setAccountName("Zion");
+    account.setAccountType("Normal");
+    account.setAddress(accountAddress);
+    account.setBalance("123456789");
+    byte[] witnessAddress = ByteArray.fromHexString(
+        "410000000000000000000000000000000000000002");
+    Witness witness = new Witness();
+    witness.setAddress(witnessAddress);
+    witness.setUrl("https://witness.example.org");
+    witness.setVoteCount(27L);
+    GenesisBlock genesisBlock = new GenesisBlock();
+    genesisBlock.setTimestamp("1234");
+    genesisBlock.setParentHash("abcd");
+    genesisBlock.setAssets(Collections.singletonList(account));
+    genesisBlock.setWitnesses(Collections.singletonList(witness));
+    CommonParameter parameter = new CommonParameter();
+    parameter.genesisBlock = genesisBlock;
+
+    Map<String, Object> snapshot = exporter.export(parameter);
+
+    Map<?, ?> genesisSnapshot = (Map<?, ?>) snapshot.get("genesisBlock");
+    Map<?, ?> assetSnapshot = (Map<?, ?>) ((List<?>) genesisSnapshot.get("assets")).get(0);
+    Assert.assertEquals("Zion", assetSnapshot.get("accountName"));
+    Assert.assertEquals("Normal", assetSnapshot.get("accountType"));
+    Assert.assertEquals(ByteArray.toHexString(accountAddress), assetSnapshot.get("address"));
+    Assert.assertEquals(123456789L, assetSnapshot.get("balance"));
+    Map<?, ?> witnessSnapshot =
+        (Map<?, ?>) ((List<?>) genesisSnapshot.get("witnesses")).get(0);
+    Assert.assertEquals(ByteArray.toHexString(witnessAddress), witnessSnapshot.get("address"));
+    Assert.assertEquals("https://witness.example.org", witnessSnapshot.get("url"));
+    Assert.assertEquals(27L, witnessSnapshot.get("voteCount"));
   }
 
   @Test
@@ -188,6 +247,35 @@ public class CommonParameterExporterTest {
     Assert.assertEquals(8_192, optionSnapshot.get("writeBufferSize"));
     Assert.assertEquals(128, optionSnapshot.get("maxOpenFiles"));
     Assert.assertEquals(1_024, optionSnapshot.get("blockSize"));
+  }
+
+  @Test
+  public void testExportStorageIncludesRuntimeTuningConfiguration() {
+    StorageConfig.DbOptionOverride defaultOption = new StorageConfig.DbOptionOverride();
+    defaultOption.setWriteBufferSize(8_192);
+    defaultOption.setCacheSize(4_096L);
+    StorageConfig storageConfig = new StorageConfig();
+    ReflectUtils.setFieldValue(storageConfig, "defaultMDbOption", defaultOption);
+    Storage storage = new Storage();
+    storage.setDefaultDbOptions(storageConfig);
+    storage.setCacheStrategies(ConfigFactory.parseString(
+        "cache.strategies.account = \"LRU\""));
+    String merkleRoot = "0000000000000000000000000000000000000000000000000000000000000001";
+    storage.setDbRoots(ConfigFactory.parseString("merkleRoot.account = \"" + merkleRoot + "\""));
+    CommonParameter parameter = new CommonParameter();
+    parameter.storage = storage;
+
+    Map<String, Object> snapshot = exporter.export(parameter);
+
+    Map<?, ?> storageSnapshot = (Map<?, ?>) snapshot.get("storage");
+    Assert.assertNotNull(storageSnapshot.get("defaultDbOptions"));
+    Map<?, ?> defaultM = (Map<?, ?>) storageSnapshot.get("defaultMDbOption");
+    Assert.assertEquals(8_192, defaultM.get("writeBufferSize"));
+    Assert.assertEquals(4_096L, defaultM.get("cacheSize"));
+    Assert.assertEquals("LRU",
+        ((Map<?, ?>) storageSnapshot.get("cacheStrategies")).get("account"));
+    Assert.assertEquals(merkleRoot,
+        ((Map<?, ?>) storageSnapshot.get("dbRoots")).get("account"));
   }
 
   @Test

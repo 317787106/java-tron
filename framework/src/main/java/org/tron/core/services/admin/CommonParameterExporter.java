@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
+import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
@@ -18,10 +19,19 @@ import java.util.Map.Entry;
 import java.util.TreeMap;
 import lombok.extern.slf4j.Slf4j;
 import org.iq80.leveldb.Options;
+import org.tron.common.args.Account;
+import org.tron.common.args.GenesisBlock;
+import org.tron.common.args.Witness;
+import org.tron.common.cache.CacheType;
 import org.tron.common.parameter.CommonParameter;
 import org.tron.common.parameter.Exportable;
+import org.tron.common.utils.ByteArray;
 import org.tron.common.utils.Property;
+import org.tron.common.utils.Sha256Hash;
 import org.tron.core.config.args.Storage;
+import org.tron.core.config.args.StorageConfig;
+import org.tron.p2p.P2pConfig;
+import org.tron.p2p.dns.update.PublishConfig;
 
 @Slf4j(topic = "API")
 public class CommonParameterExporter {
@@ -70,10 +80,104 @@ public class CommonParameterExporter {
   }
 
   private JsonNode snapshotValue(Object value) {
+    if (value instanceof GenesisBlock) {
+      return snapshotGenesisBlock((GenesisBlock) value);
+    }
+    if (value instanceof P2pConfig) {
+      return snapshotP2pConfig((P2pConfig) value);
+    }
     if (value instanceof Storage) {
       return snapshotStorage((Storage) value);
     }
     return OBJECT_MAPPER.valueToTree(value);
+  }
+
+  private ObjectNode snapshotGenesisBlock(GenesisBlock genesisBlock) {
+    ObjectNode snapshot = OBJECT_MAPPER.createObjectNode();
+    snapshot.put("number", genesisBlock.getNumber());
+    snapshot.put("timestamp", genesisBlock.getTimestamp());
+    snapshot.put("parentHash", genesisBlock.getParentHash());
+    ArrayNode assets = snapshot.putArray("assets");
+    for (Account account : genesisBlock.getAssets()) {
+      ObjectNode asset = assets.addObject();
+      asset.put("accountName", account.getAccountName().toStringUtf8());
+      asset.put("accountType", account.getAccountType().name());
+      asset.put("address", ByteArray.toHexString(account.getAddress()));
+      asset.put("balance", account.getBalance());
+    }
+    ArrayNode witnesses = snapshot.putArray("witnesses");
+    for (Witness witness : genesisBlock.getWitnesses()) {
+      ObjectNode witnessSnapshot = witnesses.addObject();
+      witnessSnapshot.put("address", ByteArray.toHexString(witness.getAddress()));
+      witnessSnapshot.put("url", witness.getUrl());
+      witnessSnapshot.put("voteCount", witness.getVoteCount());
+    }
+    return snapshot;
+  }
+
+  /**
+   * Exports only reviewed P2P configuration values. Runtime peer collections and the node ID are
+   * deliberately excluded because they change as the node runs and may contain peer or witness
+   * addresses that were never supplied by the operator.
+   */
+  private ObjectNode snapshotP2pConfig(P2pConfig config) {
+    ObjectNode snapshot = OBJECT_MAPPER.createObjectNode();
+    snapshot.put("ip", config.getIp());
+    snapshot.put("lanIp", config.getLanIp());
+    snapshot.put("ipv6", config.getIpv6());
+    snapshot.put("port", config.getPort());
+    snapshot.put("networkId", config.getNetworkId());
+    snapshot.put("minConnections", config.getMinConnections());
+    snapshot.put("maxConnections", config.getMaxConnections());
+    snapshot.put("minActiveConnections", config.getMinActiveConnections());
+    snapshot.put("maxConnectionsWithSameIp", config.getMaxConnectionsWithSameIp());
+    snapshot.put("discoverEnable", config.isDiscoverEnable());
+    snapshot.put("disconnectionPolicyEnable", config.isDisconnectionPolicyEnable());
+    snapshot.put("nodeDetectEnable", config.isNodeDetectEnable());
+    snapshot.set("treeUrls", OBJECT_MAPPER.valueToTree(new ArrayList<>(config.getTreeUrls())));
+    snapshot.set("publishConfig", snapshotPublishConfig(config.getPublishConfig()));
+    return snapshot;
+  }
+
+  private JsonNode snapshotPublishConfig(PublishConfig config) {
+    if (config == null) {
+      return OBJECT_MAPPER.nullNode();
+    }
+    ObjectNode snapshot = OBJECT_MAPPER.createObjectNode();
+    snapshot.put("dnsPublishEnable", config.isDnsPublishEnable());
+    putRedacted(snapshot, "dnsPrivate", config.getDnsPrivate());
+    snapshot.set("knownTreeUrls",
+        OBJECT_MAPPER.valueToTree(new ArrayList<>(config.getKnownTreeUrls())));
+    ArrayNode staticNodes = snapshot.putArray("staticNodes");
+    for (InetSocketAddress staticNode : config.getStaticNodes()) {
+      staticNodes.add(formatSocketAddress(staticNode));
+    }
+    snapshot.put("dnsDomain", config.getDnsDomain());
+    snapshot.put("changeThreshold", config.getChangeThreshold());
+    snapshot.put("maxMergeSize", config.getMaxMergeSize());
+    snapshot.put("dnsType", config.getDnsType() == null ? null : config.getDnsType().name());
+    putRedacted(snapshot, "accessKeyId", config.getAccessKeyId());
+    putRedacted(snapshot, "accessKeySecret", config.getAccessKeySecret());
+    snapshot.put("aliDnsEndpoint", config.getAliDnsEndpoint());
+    snapshot.put("awsHostZoneId", config.getAwsHostZoneId());
+    snapshot.put("awsRegion", config.getAwsRegion());
+    return snapshot;
+  }
+
+  private void putRedacted(ObjectNode snapshot, String name, String value) {
+    if (value == null) {
+      snapshot.putNull(name);
+    } else {
+      snapshot.put(name, REDACTED_VALUE);
+    }
+  }
+
+  private String formatSocketAddress(InetSocketAddress address) {
+    String host = address.getHostString();
+    if (host.indexOf(':') >= 0 && !host.startsWith("[")) {
+      host = "[" + host + "]";
+    }
+    return host + ":" + address.getPort();
   }
 
   /**
@@ -93,8 +197,21 @@ public class CommonParameterExporter {
     snapshot.put("checkpointSync", storage.isCheckpointSync());
     snapshot.put("estimatedBlockTransactions", storage.getEstimatedBlockTransactions());
     snapshot.put("txCacheInitOptimization", storage.isTxCacheInitOptimization());
+    snapshot.set("defaultDbOptions", snapshotDbOptions(storage.getDefaultDbOptions()));
+    snapshot.set("defaultDbOption", snapshotDbOptionOverride(storage.getDefaultDbOption()));
+    snapshot.set("defaultMDbOption", snapshotDbOptionOverride(storage.getDefaultMDbOption()));
+    snapshot.set("defaultLDbOption", snapshotDbOptionOverride(storage.getDefaultLDbOption()));
+    ObjectNode cacheStrategies = snapshot.putObject("cacheStrategies");
+    for (Entry<CacheType, String> entry
+        : new TreeMap<>(storage.getCacheStrategies()).entrySet()) {
+      cacheStrategies.put(entry.getKey().toString(), entry.getValue());
+    }
     snapshot.set("cacheDbs", OBJECT_MAPPER.valueToTree(
         new ArrayList<>(storage.getCacheDbs())));
+    ObjectNode dbRoots = snapshot.putObject("dbRoots");
+    for (Entry<String, Sha256Hash> entry : new TreeMap<>(storage.getDbRoots()).entrySet()) {
+      dbRoots.put(entry.getKey(), entry.getValue().toString());
+    }
 
     Map<String, Property> propertyMap = storage.getPropertyMap();
     if (propertyMap == null) {
@@ -121,12 +238,15 @@ public class CommonParameterExporter {
     ObjectNode snapshot = OBJECT_MAPPER.createObjectNode();
     snapshot.put("name", property.getName());
     snapshot.put("path", property.getPath());
-    Options options = property.getDbOptions();
+    snapshot.set("dbOptions", snapshotDbOptions(property.getDbOptions()));
+    return snapshot;
+  }
+
+  private JsonNode snapshotDbOptions(Options options) {
     if (options == null) {
-      snapshot.putNull("dbOptions");
-      return snapshot;
+      return OBJECT_MAPPER.nullNode();
     }
-    ObjectNode optionSnapshot = snapshot.putObject("dbOptions");
+    ObjectNode optionSnapshot = OBJECT_MAPPER.createObjectNode();
     optionSnapshot.put("createIfMissing", options.createIfMissing());
     optionSnapshot.put("errorIfExists", options.errorIfExists());
     optionSnapshot.put("writeBufferSize", options.writeBufferSize());
@@ -137,7 +257,23 @@ public class CommonParameterExporter {
     optionSnapshot.put("verifyChecksums", options.verifyChecksums());
     optionSnapshot.put("cacheSize", options.cacheSize());
     optionSnapshot.put("paranoidChecks", options.paranoidChecks());
+    return optionSnapshot;
+  }
+
+  private JsonNode snapshotDbOptionOverride(StorageConfig.DbOptionOverride option) {
+    if (option == null) {
+      return OBJECT_MAPPER.nullNode();
+    }
+    ObjectNode snapshot = OBJECT_MAPPER.createObjectNode();
+    putNullable(snapshot, "blockSize", option.getBlockSize());
+    putNullable(snapshot, "writeBufferSize", option.getWriteBufferSize());
+    putNullable(snapshot, "cacheSize", option.getCacheSize());
+    putNullable(snapshot, "maxOpenFiles", option.getMaxOpenFiles());
     return snapshot;
+  }
+
+  private void putNullable(ObjectNode snapshot, String name, Number value) {
+    snapshot.set(name, OBJECT_MAPPER.valueToTree(value));
   }
 
   private void logExportFailure(String fieldName, Exception exception) {

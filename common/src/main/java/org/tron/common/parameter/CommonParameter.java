@@ -320,11 +320,9 @@ public class CommonParameter {
   public int validateSignThreadNum;
   @Getter
   @Setter
-  @Exportable
   public long maintenanceTimeInterval;
   @Getter
   @Setter
-  @Exportable
   public long proposalExpireTime;
   @Getter
   @Setter
@@ -784,7 +782,6 @@ public class CommonParameter {
   public long allowTvmShangHai;
   @Getter
   @Setter
-  @Exportable
   public long allowCancelAllUnfreezeV2;
   @Getter
   @Setter
@@ -802,7 +799,6 @@ public class CommonParameter {
   public long allowEnergyAdjustment;
   @Getter
   @Setter
-  @Exportable
   public long maxCreateAccountTxSize = 1000L;
   @Getter
   @Setter
