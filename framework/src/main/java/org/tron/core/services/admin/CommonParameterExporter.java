@@ -92,6 +92,11 @@ public class CommonParameterExporter {
     return OBJECT_MAPPER.valueToTree(value);
   }
 
+  /**
+   * Builds an explicit snapshot because generic Jackson serialization represents protobuf
+   * account names as {@code ByteString} metadata and address byte arrays as Base64. Converting
+   * these fields explicitly preserves the UTF-8 and Base58Check formats used by genesis config.
+   */
   private ObjectNode snapshotGenesisBlock(GenesisBlock genesisBlock) {
     ObjectNode snapshot = OBJECT_MAPPER.createObjectNode();
     snapshot.put("number", genesisBlock.getNumber());
