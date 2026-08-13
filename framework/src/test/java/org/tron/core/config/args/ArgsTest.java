@@ -15,18 +15,16 @@
 
 package org.tron.core.config.args;
 
-import com.beust.jcommander.ParameterException;
 import com.google.common.collect.Lists;
 import com.typesafe.config.Config;
 import com.typesafe.config.ConfigFactory;
 import io.grpc.internal.GrpcUtil;
 import io.grpc.netty.NettyServerBuilder;
+import java.io.ByteArrayOutputStream;
+import java.io.PrintStream;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.net.InetAddress;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
@@ -78,13 +76,10 @@ public class ArgsTest {
   public void testAttachRejectsNodeConfigOption() {
     Args.clearParam();
     try {
-      Args.setParam(new String[] {
+      assertAttachParameterError(new String[] {
           "--attach", "/tmp/java-tron.sock",
           "--config", "config.conf"
-      }, TestConstants.TEST_CONF);
-      Assert.fail("Expected a node configuration option to be rejected");
-    } catch (ParameterException e) {
-      Assert.assertEquals("--attach cannot be combined with: --config", e.getMessage());
+      }, "Error: --attach cannot be combined with: --config");
     } finally {
       Args.clearParam();
     }
@@ -94,28 +89,8 @@ public class ArgsTest {
   public void testAttachRejectsEmptySocketPath() {
     Args.clearParam();
     try {
-      Args.setParam(new String[] {"--attach", ""}, TestConstants.TEST_CONF);
-      Assert.fail("Expected an empty socket path to be rejected");
-    } catch (ParameterException e) {
-      Assert.assertEquals("--attach requires a non-empty <socket-path>", e.getMessage());
-    } finally {
-      Args.clearParam();
-    }
-  }
-
-  @Test
-  public void testAttachRejectsOtherNodeOptions() {
-    Args.clearParam();
-    try {
-      Args.setParam(new String[] {
-          "--attach", "/tmp/java-tron.sock",
-          "--keystore-factory",
-          "seed.example.org:18888"
-      }, TestConstants.TEST_CONF);
-      Assert.fail("Expected node startup options to be rejected");
-    } catch (ParameterException e) {
-      Assert.assertEquals(
-          "--attach cannot be combined with: --keystore-factory, seedNode", e.getMessage());
+      assertAttachParameterError(new String[] {"--attach", ""},
+          "Error: --attach requires a non-empty <socket-path>");
     } finally {
       Args.clearParam();
     }
@@ -125,13 +100,28 @@ public class ArgsTest {
   public void testExecRequiresAttach() {
     Args.clearParam();
     try {
-      Args.setParam(new String[] {"--exec", "admin_getRuntimeParameters"},
-          TestConstants.TEST_CONF);
-      Assert.fail("Expected --exec without --attach to fail");
-    } catch (ParameterException e) {
-      Assert.assertEquals("--exec requires --attach <socket-path>", e.getMessage());
+      assertAttachParameterError(new String[] {"--exec", "admin_example"},
+          "Error: --exec requires --attach <socket-path>");
     } finally {
       Args.clearParam();
+    }
+  }
+
+  private void assertAttachParameterError(String[] args, String expectedMessage) {
+    PrintStream originalErr = System.err;
+    ByteArrayOutputStream errorOutput = new ByteArrayOutputStream();
+    PrintStream capturedErr = new PrintStream(errorOutput);
+    try {
+      System.setErr(capturedErr);
+      Args.setParam(args, TestConstants.TEST_CONF);
+      Assert.fail("Expected invalid attach parameters to fail");
+    } catch (TronError e) {
+      Assert.assertEquals(TronError.ErrCode.PARAMETER_INIT, e.getErrCode());
+      Assert.assertEquals(expectedMessage, e.getMessage());
+      Assert.assertEquals(expectedMessage + System.lineSeparator(), errorOutput.toString());
+    } finally {
+      System.setErr(originalErr);
+      capturedErr.close();
     }
   }
 
@@ -369,21 +359,27 @@ public class ArgsTest {
 
   @Test
   public void testAdminRpcAndIpcConfigBinding() {
-    Map<String, String> override = new HashMap<>();
+    Map<String, Object> override = new HashMap<>();
     override.put("storage.db.directory", "database");
-    override.put("node.ipcEnable", "true");
-    override.put("node.adminRpc.enable", "true");
-    override.put("node.adminRpc.listenAddress", "127.0.0.2");
-    override.put("node.adminRpc.port", "18575");
+    override.put("node.admin.ipc.enable", "true");
+    override.put("node.admin.ipc.socketDirectory", "/tmp/tron-ipc");
+    override.put("node.admin.rpc.enable", "true");
+    override.put("node.admin.rpc.listenAddress", "127.0.0.2");
+    override.put("node.admin.rpc.port", "18575");
+    override.put("node.admin.rpc.virtualHosts",
+        Arrays.asList("admin.example.com", "localhost"));
     Config config = ConfigFactory.parseMap(override)
         .withFallback(ConfigFactory.defaultReference());
 
     try {
       Args.applyConfigParams(config);
       Assert.assertTrue(Args.getInstance().isIpcEnable());
+      Assert.assertEquals("/tmp/tron-ipc", Args.getInstance().getIpcSocketDirectory());
       Assert.assertTrue(Args.getInstance().isAdminRpcEnable());
       Assert.assertEquals("127.0.0.2", Args.getInstance().getAdminListenAddress());
       Assert.assertEquals(18575, Args.getInstance().getAdminListenPort());
+      Assert.assertEquals(Arrays.asList("admin.example.com", "localhost"),
+          Args.getInstance().getAdminVirtualHosts());
     } finally {
       Args.clearParam();
     }

@@ -7,6 +7,8 @@ import com.googlecode.jsonrpc4j.JsonRpcInterceptor;
 import java.io.IOException;
 import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
+import java.util.HashSet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import org.junit.Before;
@@ -27,6 +29,7 @@ public class AdminRpcServletTest {
     setField("adminJsonRpc", mock(AdminJsonRpc.class));
     setField("interceptor", mock(JsonRpcInterceptor.class));
     servlet.init(new MockServletConfig());
+    setVirtualHosts("localhost");
   }
 
   @Test
@@ -91,6 +94,47 @@ public class AdminRpcServletTest {
         doPost(body, "application/vnd.tron+json").getStatus());
   }
 
+  @Test
+  public void unlistedVirtualHostIsRejected() throws Exception {
+    MockHttpServletResponse response = doPost(
+        "{\"jsonrpc\":\"2.0\",\"method\":\"admin_example\",\"id\":1}",
+        "application/json", "evil.example:8575");
+
+    assertEquals(HttpServletResponse.SC_FORBIDDEN, response.getStatus());
+  }
+
+  @Test
+  public void listedVirtualHostIsAcceptedCaseInsensitivelyAndWithoutPort() throws Exception {
+    setVirtualHosts("admin.example.com");
+
+    MockHttpServletResponse response = doPost(
+        "{\"jsonrpc\":\"2.0\",\"method\":\"admin_example\",\"id\":1}",
+        "application/json", "ADMIN.EXAMPLE.COM:8575");
+
+    assertEquals(HttpServletResponse.SC_OK, response.getStatus());
+  }
+
+  @Test
+  public void ipLiteralHostsAreAccepted() throws Exception {
+    String body = "{\"jsonrpc\":\"2.0\",\"method\":\"admin_example\",\"id\":1}";
+
+    assertEquals(HttpServletResponse.SC_OK,
+        doPost(body, "application/json", "127.0.0.1:8575").getStatus());
+    assertEquals(HttpServletResponse.SC_OK,
+        doPost(body, "application/json", "[::1]:8575").getStatus());
+  }
+
+  @Test
+  public void wildcardVirtualHostAcceptsAnyHostname() throws Exception {
+    setVirtualHosts("*");
+
+    MockHttpServletResponse response = doPost(
+        "{\"jsonrpc\":\"2.0\",\"method\":\"admin_example\",\"id\":1}",
+        "application/json", "any.example:8575");
+
+    assertEquals(HttpServletResponse.SC_OK, response.getStatus());
+  }
+
   private void setField(String name, Object value) throws Exception {
     Field field = AdminRpcServlet.class.getDeclaredField(name);
     field.setAccessible(true);
@@ -102,12 +146,24 @@ public class AdminRpcServletTest {
   }
 
   private MockHttpServletResponse doPost(String body, String contentType) throws Exception {
+    return doPost(body, contentType, null);
+  }
+
+  private MockHttpServletResponse doPost(String body, String contentType, String host)
+      throws Exception {
     MockHttpServletRequest request = new MockHttpServletRequest("POST", "/admin");
     request.setContentType(contentType);
     request.setContent(body.getBytes(StandardCharsets.UTF_8));
+    if (host != null) {
+      request.addHeader("Host", host);
+    }
     MockHttpServletResponse response = new MockHttpServletResponse();
     servlet.callDoPost(request, response);
     return response;
+  }
+
+  private void setVirtualHosts(String... hosts) throws Exception {
+    setField("virtualHosts", new HashSet<>(Arrays.asList(hosts)));
   }
 
   private static class TestableServlet extends AdminRpcServlet {

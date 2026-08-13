@@ -4,6 +4,7 @@ import com.google.common.annotations.VisibleForTesting;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import lombok.Getter;
 import lombok.Setter;
@@ -627,10 +628,17 @@ public class CommonParameter {
   @Getter
   @Setter
   @Exportable
+  public List<String> adminVirtualHosts = new ArrayList<>(Collections.singletonList("localhost"));
+  @Getter
+  @Setter
+  @Exportable
   public boolean ipcEnable = false;
   @Getter
   @Setter
   @Exportable
+  public String ipcSocketDirectory = "";
+  @Getter
+  @Setter
   public int maxTransactionPendingSize;
   @Getter
   @Setter

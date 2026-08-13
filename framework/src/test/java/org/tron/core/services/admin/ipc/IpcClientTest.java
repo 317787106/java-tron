@@ -8,9 +8,12 @@ import com.googlecode.jsonrpc4j.JsonRpcMethod;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
 import java.io.PrintStream;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -28,6 +31,16 @@ import org.mockito.Mockito;
 public class IpcClientTest {
 
   private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+
+  @Test
+  public void testClientDoesNotDeclareLogger() {
+    try {
+      IpcClient.class.getDeclaredField("logger");
+      Assert.fail("IPC client must not initialize the node logging system");
+    } catch (NoSuchFieldException expected) {
+      // No logger field means loading IpcClient cannot initialize SLF4J through this class.
+    }
+  }
 
   @Test
   public void testBuildHelpLinesIncludesSortedCommandParameters() {
@@ -201,7 +214,8 @@ public class IpcClientTest {
       Files.deleteIfExists(temporaryDirectory);
     }
 
-    Assert.assertEquals("IPC socket file does not exist: missing.sock" + System.lineSeparator(),
+    Assert.assertEquals("Error: IPC socket file does not exist: missing.sock"
+            + System.lineSeparator(),
         errorOutput.toString("UTF-8"));
   }
 
@@ -250,6 +264,34 @@ public class IpcClientTest {
 
     Assert.assertEquals(
         "Disconnected from server before receiving a response." + System.lineSeparator(),
+        errorOutput.toString("UTF-8"));
+  }
+
+  @Test
+  public void testExecTimesOutWaitingForResponse() throws Exception {
+    Socket socket = Mockito.mock(Socket.class);
+    Mockito.when(socket.getOutputStream()).thenReturn(new ByteArrayOutputStream());
+    Mockito.when(socket.getInputStream()).thenReturn(new InputStream() {
+      @Override
+      public int read() throws IOException {
+        throw new SocketTimeoutException("timed out");
+      }
+    });
+
+    PrintStream originalErr = System.err;
+    ByteArrayOutputStream errorOutput = new ByteArrayOutputStream();
+    PrintStream capturedErr = new PrintStream(errorOutput, true, "UTF-8");
+    try {
+      System.setErr(capturedErr);
+      Assert.assertEquals(IpcClient.EXIT_FAILURE,
+          new IpcClient("unused").runExec(socket, "admin_example a b"));
+    } finally {
+      System.setErr(originalErr);
+      capturedErr.close();
+    }
+
+    Mockito.verify(socket).setSoTimeout(30_000);
+    Assert.assertEquals("Timed out waiting for IPC response." + System.lineSeparator(),
         errorOutput.toString("UTF-8"));
   }
 
@@ -328,6 +370,24 @@ public class IpcClientTest {
       Assert.assertNull("IPC client session failed", failure.get());
       Assert.assertFalse("Clean IPC client exit left the thread interrupted", interrupted.get());
       Mockito.verify(reader, Mockito.never()).printAbove("Disconnected from server.");
+    }
+  }
+
+  @Test(timeout = 10_000)
+  public void testSessionDoesNotSwallowUnexpectedRuntimeException() throws Exception {
+    LineReader reader = Mockito.mock(LineReader.class);
+    IllegalStateException expected = new IllegalStateException("unexpected failure");
+    Mockito.when(reader.readLine("> ")).thenThrow(expected);
+
+    try (ServerSocket serverSocket = new ServerSocket(0);
+        Socket clientSocket = new Socket("127.0.0.1", serverSocket.getLocalPort());
+        Socket serverConnection = serverSocket.accept()) {
+      try {
+        new IpcClient("unused").runSession(clientSocket, reader);
+        Assert.fail("Expected the unexpected runtime exception to propagate");
+      } catch (IllegalStateException e) {
+        Assert.assertSame(expected, e);
+      }
     }
   }
 
