@@ -15,6 +15,7 @@ import java.io.InputStream;
 import java.io.OutputStreamWriter;
 import java.lang.management.ManagementFactory;
 import java.net.SocketTimeoutException;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
@@ -412,7 +413,11 @@ public class IpcService extends AbstractService {
   }
 
   private int getSocketPathLength(Path socketFile) {
-    return socketFile.toString().getBytes(AFUNIXSocketAddress.addressCharset()).length;
+    return getSocketPathLength(socketFile, AFUNIXSocketAddress.addressCharset());
+  }
+
+  static int getSocketPathLength(Path socketFile, Charset charset) {
+    return socketFile.toString().getBytes(charset).length;
   }
 
   private void validateSocketRootDirectory(Path socketRootDirectory) throws IOException {

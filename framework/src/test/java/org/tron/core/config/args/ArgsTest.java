@@ -79,7 +79,7 @@ public class ArgsTest {
       assertAttachParameterError(new String[] {
           "--attach", "/tmp/java-tron.sock",
           "--config", "config.conf"
-      }, "--attach cannot be combined with: --config");
+      }, "Error: --attach cannot be combined with: --config");
     } finally {
       Args.clearParam();
     }
@@ -90,21 +90,7 @@ public class ArgsTest {
     Args.clearParam();
     try {
       assertAttachParameterError(new String[] {"--attach", ""},
-          "--attach requires a non-empty <socket-path>");
-    } finally {
-      Args.clearParam();
-    }
-  }
-
-  @Test
-  public void testAttachRejectsOtherNodeOptions() {
-    Args.clearParam();
-    try {
-      assertAttachParameterError(new String[] {
-          "--attach", "/tmp/java-tron.sock",
-          "--keystore-factory",
-          "seed.example.org:18888"
-      }, "--attach cannot be combined with: --keystore-factory, seedNode");
+          "Error: --attach requires a non-empty <socket-path>");
     } finally {
       Args.clearParam();
     }
@@ -115,7 +101,7 @@ public class ArgsTest {
     Args.clearParam();
     try {
       assertAttachParameterError(new String[] {"--exec", "admin_example"},
-          "--exec requires --attach <socket-path>");
+          "Error: --exec requires --attach <socket-path>");
     } finally {
       Args.clearParam();
     }

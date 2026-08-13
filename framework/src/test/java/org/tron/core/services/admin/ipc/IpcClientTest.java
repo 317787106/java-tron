@@ -33,6 +33,16 @@ public class IpcClientTest {
   private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
   @Test
+  public void testClientDoesNotDeclareLogger() {
+    try {
+      IpcClient.class.getDeclaredField("logger");
+      Assert.fail("IPC client must not initialize the node logging system");
+    } catch (NoSuchFieldException expected) {
+      // No logger field means loading IpcClient cannot initialize SLF4J through this class.
+    }
+  }
+
+  @Test
   public void testBuildHelpLinesIncludesSortedCommandParameters() {
     IpcClient client = new IpcClient("unused");
 
@@ -203,7 +213,8 @@ public class IpcClientTest {
       Files.deleteIfExists(temporaryDirectory);
     }
 
-    Assert.assertEquals("IPC socket file does not exist: missing.sock" + System.lineSeparator(),
+    Assert.assertEquals("Error: IPC socket file does not exist: missing.sock"
+            + System.lineSeparator(),
         errorOutput.toString("UTF-8"));
   }
 

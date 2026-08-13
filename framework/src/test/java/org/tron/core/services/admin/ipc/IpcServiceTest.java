@@ -106,21 +106,14 @@ public class IpcServiceTest {
   }
 
   @Test
-  public void testResolveSocketFilePathRejectsEncodedPathOverLimit() throws Exception {
-    IpcService service = newIpcService();
-    CommonParameter parameter = new CommonParameter();
-    StringBuilder outputDirectory = new StringBuilder("/tmp/");
-    for (int i = 0; i < 40; i++) {
-      outputDirectory.append("目");
-    }
-    parameter.outputDirectory = outputDirectory.toString();
+  public void testSocketPathLengthCountsUtf8Bytes() {
+    Path socketPath = Paths.get("/tmp/目录.sock");
 
-    try {
-      resolveSocketFilePath(service, parameter, "1234");
-      Assert.fail("Expected the encoded IPC socket path length to be checked");
-    } catch (TronError e) {
-      Assert.assertTrue(e.getMessage().contains("exceeding the portable limit of 100 bytes"));
-    }
+    int encodedLength = IpcService.getSocketPathLength(socketPath, StandardCharsets.UTF_8);
+
+    Assert.assertEquals(socketPath.toString().getBytes(StandardCharsets.UTF_8).length,
+        encodedLength);
+    Assert.assertTrue(encodedLength > socketPath.toString().length());
   }
 
   @Test

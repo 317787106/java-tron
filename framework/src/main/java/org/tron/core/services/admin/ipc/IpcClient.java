@@ -26,7 +26,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
-import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.jline.reader.Completer;
 import org.jline.reader.EndOfFileException;
@@ -46,7 +45,13 @@ import org.newsclub.net.unix.AFUNIXSocketAddress;
 import org.tron.core.services.admin.AdminJsonRpc;
 import org.tron.program.Version;
 
-@Slf4j(topic = "API")
+/**
+ * Standalone IPC console client.
+ *
+ * <p>Keep this class independent of SLF4J, including Lombok's {@code @Slf4j}. Client diagnostics
+ * must be written to the console through {@link System#out}, {@link System#err}, or JLine so the
+ * client does not initialize or write to the node's Logback appenders.
+ */
 public class IpcClient {
 
   private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
@@ -78,7 +83,6 @@ public class IpcClient {
       return ipcClient.run(execCommand);
     } catch (IOException e) {
       System.err.println("Failed to communicate with IPC server.");
-      logger.debug("IPC client communication failed: {}", e.getClass().getSimpleName());
       return EXIT_FAILURE;
     }
   }
@@ -265,7 +269,7 @@ public class IpcClient {
           }
         }
       } catch (IOException e) {
-        logger.debug("IPC response stream closed: {}", e.getMessage());
+        // The socket closing is reported to the console by notifyDisconnected below.
       } finally {
         if (notifyDisconnected(connected, reader)) {
           inputThread.interrupt();

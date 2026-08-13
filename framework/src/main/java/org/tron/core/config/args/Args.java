@@ -206,10 +206,13 @@ public class Args extends CommonParameter {
       }
       return false;
     }
+    if (isParameterAssigned(assignedParameters, "shellConfFileName")) {
+      throwAttachParameterError("Error: --attach cannot be combined with: --config");
+    }
     if (StringUtils.isBlank(cmd.ipcSocketFile)) {
       throwAttachParameterError("Error: --attach requires a non-empty <socket-path>");
     }
-    //ignore seenodes from cmd
+    // Node-only CLI options are irrelevant to the standalone IPC client and are ignored.
     ipcSocketFile = cmd.ipcSocketFile;
     ipcExecCommand = cmd.ipcExecCommand;
     if (StringUtils.isNotEmpty(cmd.logbackPath)) {
