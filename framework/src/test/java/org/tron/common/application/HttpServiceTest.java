@@ -41,8 +41,8 @@ public class HttpServiceTest {
 
       int localPort = service.getConnector().getLocalPort();
       Assert.assertTrue(localPort > 0);
-      try (Socket socket = new Socket("127.0.0.1", localPort)) {
-        Assert.assertTrue(socket.isConnected());
+      try (Socket ignored = new Socket("127.0.0.1", localPort)) {
+        // Successful construction proves that the configured address accepts connections.
       }
     } finally {
       service.stop().get(10, TimeUnit.SECONDS);

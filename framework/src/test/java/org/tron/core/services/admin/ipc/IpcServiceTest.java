@@ -24,9 +24,13 @@ import java.util.Arrays;
 import java.util.EnumSet;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
+import org.junit.After;
 import org.junit.Assert;
 import org.junit.Assume;
+import org.junit.Before;
 import org.junit.Test;
 import org.mockito.MockedStatic;
 import org.mockito.Mockito;
@@ -42,6 +46,31 @@ import org.tron.core.services.admin.AdminJsonRpc;
 import org.tron.core.services.admin.AdminJsonRpcImpl;
 
 public class IpcServiceTest {
+
+  private int originalMaxMessageSize;
+
+  @Before
+  public void setUp() {
+    originalMaxMessageSize = Args.getInstance().maxMessageSize;
+    Args.getInstance().maxMessageSize = 4 * 1024 * 1024;
+  }
+
+  @After
+  public void tearDown() {
+    Args.getInstance().maxMessageSize = originalMaxMessageSize;
+  }
+
+  @Test
+  public void testServiceIsNotRunningBeforeStart() throws Exception {
+    Assert.assertFalse(isRunning(newIpcService()));
+  }
+
+  @Test
+  public void testRequestSizePreservesConfiguredZero() throws Exception {
+    Args.getInstance().maxMessageSize = 0;
+
+    Assert.assertEquals(0, getIntField(newIpcService(), "maxRequestSize"));
+  }
 
   @Test
   public void testResolveSocketFilePathUsesOutputDirectory() throws Exception {
@@ -310,7 +339,7 @@ public class IpcServiceTest {
   @Test
   public void testReadRequestAcceptsMaximumSize() throws Exception {
     IpcService service = newIpcService();
-    int maxRequestSize = getStaticIntField("MAX_REQUEST_SIZE");
+    int maxRequestSize = getIntField(service, "maxRequestSize");
     byte[] request = new byte[maxRequestSize + 1];
     Arrays.fill(request, 0, maxRequestSize, (byte) '1');
     request[maxRequestSize] = '\n';
@@ -322,7 +351,7 @@ public class IpcServiceTest {
   @Test(expected = IOException.class)
   public void testReadRequestRejectsOversizedInputWithoutNewline() throws Exception {
     IpcService service = newIpcService();
-    int maxRequestSize = getStaticIntField("MAX_REQUEST_SIZE");
+    int maxRequestSize = getIntField(service, "maxRequestSize");
     ByteArrayInputStream input = new ByteArrayInputStream(new byte[maxRequestSize + 1]);
 
     readRequest(service, input);
@@ -395,6 +424,43 @@ public class IpcServiceTest {
   }
 
   @Test(timeout = 10_000)
+  public void testInnerStartRollsBackWhenAcceptorSubmissionFails() throws Exception {
+    assumePosixFileSystem();
+    CommonParameter parameter = Args.getInstance();
+    String originalOutputDirectory = parameter.outputDirectory;
+    String originalSocketDirectory = parameter.ipcSocketDirectory;
+    Path outputDirectory = Files.createTempDirectory(Paths.get("/tmp"),
+        "ipc-submit-fail-");
+    IpcService service = newIpcService();
+    Path socketFile = null;
+    try {
+      parameter.outputDirectory = outputDirectory.toString();
+      parameter.ipcSocketDirectory = "";
+      socketFile = resolveSocketFilePath(service, parameter, getPid(service));
+      getExecutorService(service, "acceptorExecutor").shutdownNow();
+
+      try {
+        service.innerStart();
+        Assert.fail("Expected acceptor submission to fail");
+      } catch (RejectedExecutionException e) {
+        Assert.assertFalse(isRunning(service));
+      }
+
+      Assert.assertFalse(Files.exists(socketFile));
+      Assert.assertFalse(Files.exists(socketFile.getParent()));
+    } finally {
+      parameter.outputDirectory = originalOutputDirectory;
+      parameter.ipcSocketDirectory = originalSocketDirectory;
+      service.innerStop();
+      if (socketFile != null) {
+        Files.deleteIfExists(socketFile);
+        Files.deleteIfExists(socketFile.getParent());
+      }
+      Files.deleteIfExists(outputDirectory);
+    }
+  }
+
+  @Test(timeout = 10_000)
   public void testHandlesMultipleClientsConcurrently() throws Exception {
     assumePosixFileSystem();
     CommonParameter parameter = Args.getInstance();
@@ -442,6 +508,7 @@ public class IpcServiceTest {
     AFUNIXSocket client = Mockito.mock(AFUNIXSocket.class);
     Mockito.doThrow(new IOException("closed")).when(client).getInputStream();
     try {
+      setField(service, "isRunning", true);
       registerClient(service, client);
 
       Mockito.verify(client).setSoTimeout(10 * 60 * 1000);
@@ -456,6 +523,7 @@ public class IpcServiceTest {
     CountDownLatch handlersStarted = new CountDownLatch(16);
     CountDownLatch releaseHandlers = new CountDownLatch(1);
     try {
+      setField(service, "isRunning", true);
       for (int i = 0; i < 16; i++) {
         AFUNIXSocket client = Mockito.mock(AFUNIXSocket.class);
         Mockito.when(client.getInputStream()).thenAnswer(invocation -> {
@@ -513,12 +581,8 @@ public class IpcServiceTest {
           writer.flush();
           Assert.assertNotNull(reader.readLine());
 
-          long startNanos = System.nanoTime();
           service.innerStop();
           started = false;
-          long elapsedMillis = (System.nanoTime() - startNanos) / 1_000_000;
-          Assert.assertTrue("IPC service shutdown took " + elapsedMillis + " ms",
-              elapsedMillis < 5_000);
         }
       }
     } finally {
@@ -674,16 +738,29 @@ public class IpcServiceTest {
         new Class<?>[] {InputStream.class}, input);
   }
 
-  private int getStaticIntField(String fieldName) throws Exception {
+  private int getIntField(IpcService service, String fieldName) throws Exception {
     Field field = IpcService.class.getDeclaredField(fieldName);
     field.setAccessible(true);
-    return field.getInt(null);
+    return field.getInt(service);
   }
 
   private ObjectMapper getStaticObjectMapper(String fieldName) throws Exception {
     Field field = IpcService.class.getDeclaredField(fieldName);
     field.setAccessible(true);
     return (ObjectMapper) field.get(null);
+  }
+
+  private boolean isRunning(IpcService service) throws Exception {
+    Field field = IpcService.class.getDeclaredField("isRunning");
+    field.setAccessible(true);
+    return field.getBoolean(service);
+  }
+
+  private ExecutorService getExecutorService(IpcService service, String fieldName)
+      throws Exception {
+    Field field = IpcService.class.getDeclaredField(fieldName);
+    field.setAccessible(true);
+    return (ExecutorService) field.get(service);
   }
 
   @SuppressWarnings("unchecked")

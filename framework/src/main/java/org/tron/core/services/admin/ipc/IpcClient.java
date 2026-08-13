@@ -16,6 +16,7 @@ import java.lang.annotation.Annotation;
 import java.lang.reflect.Method;
 import java.lang.reflect.Type;
 import java.net.Socket;
+import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -49,6 +50,7 @@ import org.tron.program.Version;
 public class IpcClient {
 
   private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+  private static final int EXEC_RESPONSE_TIMEOUT_MILLIS = 30_000;
   static final int EXIT_SUCCESS = 0;
   static final int EXIT_FAILURE = 1;
 
@@ -193,6 +195,9 @@ public class IpcClient {
     String request;
     try {
       request = buildRequest(commandWords);
+    } catch (JsonProcessingException e) {
+      System.err.println("Failed to build IPC request.");
+      return EXIT_FAILURE;
     } catch (IllegalArgumentException e) {
       System.err.println(e.getMessage());
       return EXIT_FAILURE;
@@ -201,6 +206,7 @@ public class IpcClient {
       return "help".equalsIgnoreCase(commandWords.get(0)) ? EXIT_SUCCESS : EXIT_FAILURE;
     }
 
+    socket.setSoTimeout(EXEC_RESPONSE_TIMEOUT_MILLIS);
     try (BufferedWriter serverWriter = new BufferedWriter(
         new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8));
         BufferedReader serverReader = new BufferedReader(
@@ -211,18 +217,23 @@ public class IpcClient {
 
       String response;
       do {
-        response = serverReader.readLine();
+        try {
+          response = serverReader.readLine();
+        } catch (SocketTimeoutException e) {
+          System.err.println("Timed out waiting for IPC response.");
+          return EXIT_FAILURE;
+        }
       } while (response != null && response.trim().isEmpty());
       if (response == null) {
         System.err.println("Disconnected from server before receiving a response.");
         return EXIT_FAILURE;
       }
-      String formattedResponse = formatResponse(response);
-      if (isSuccessfulResponse(response)) {
-        System.out.println(formattedResponse);
+      ParsedResponse parsedResponse = parseResponse(response);
+      if (parsedResponse.successful) {
+        System.out.println(parsedResponse.formatted);
         return EXIT_SUCCESS;
       }
-      System.err.println(formattedResponse);
+      System.err.println(parsedResponse.formatted);
       return EXIT_FAILURE;
     }
   }
@@ -324,14 +335,11 @@ public class IpcClient {
           serverWriter.write(request);
           serverWriter.newLine();
           serverWriter.flush();
-        } catch (UserInterruptException e) {
-          // Ctrl + C or server disconnected
-          break;
-        } catch (EndOfFileException e) {
-          // Ctrl + D
+        } catch (UserInterruptException | EndOfFileException e) {
+          // Ctrl + C, Ctrl + D, or server disconnected
           break;
         } catch (JsonProcessingException e) {
-          logger.error("Failed to build IPC request", e);
+          System.err.println("Failed to build IPC request.");
         } catch (SyntaxError e) {
           System.err.println("Invalid command syntax.");
         } catch (IllegalArgumentException e) {
@@ -339,8 +347,6 @@ public class IpcClient {
         } catch (IOException e) {
           notifyDisconnected(connected, reader);
           break;
-        } catch (Exception e) {
-          logger.error("Failed to process IPC command", e);
         }
       }
     } catch (IOException e) {
@@ -470,36 +476,27 @@ public class IpcClient {
   }
 
   String formatResponse(String response) {
+    return parseResponse(response).formatted;
+  }
+
+  private ParsedResponse parseResponse(String response) {
     try {
       JsonNode root = OBJECT_MAPPER.readTree(response);
       if (root == null || root.isMissingNode()) {
-        return response;
+        return new ParsedResponse(response, false);
       }
       JsonNode error = root.get("error");
       if (error != null && !error.isNull()) {
         String code = error.has("code") ? " " + error.get("code").asText() : "";
         String message = error.has("message") ? error.get("message").asText() : "Unknown error";
-        return "Error" + code + ": " + message;
+        return new ParsedResponse("Error" + code + ": " + message, false);
       }
       if (root.has("result")) {
-        return formatJsonValue(root.get("result"));
+        return new ParsedResponse(formatJsonValue(root.get("result")), true);
       }
-      return formatJsonValue(root);
+      return new ParsedResponse(formatJsonValue(root), false);
     } catch (JsonProcessingException e) {
-      return response;
-    }
-  }
-
-  boolean isSuccessfulResponse(String response) {
-    try {
-      JsonNode root = OBJECT_MAPPER.readTree(response);
-      if (root == null || !root.isObject()) {
-        return false;
-      }
-      JsonNode error = root.get("error");
-      return (error == null || error.isNull()) && root.has("result");
-    } catch (JsonProcessingException e) {
-      return false;
+      return new ParsedResponse(response, false);
     }
   }
 
@@ -521,6 +518,17 @@ public class IpcClient {
     params.put("params", values);
     params.put("id", ++requestId);
     return OBJECT_MAPPER.writeValueAsString(params);
+  }
+
+  private static class ParsedResponse {
+
+    private final String formatted;
+    private final boolean successful;
+
+    private ParsedResponse(String formatted, boolean successful) {
+      this.formatted = formatted;
+      this.successful = successful;
+    }
   }
 
   private static class AdminCommand {

@@ -57,29 +57,32 @@ public class IpcService extends AbstractService {
   private static final ObjectMapper OBJECT_MAPPER = JsonRpcMapper.create();
   private static final String ACCEPTOR_EXECUTOR_NAME = "admin-ipc-acceptor";
   private static final String CLIENT_EXECUTOR_NAME = "admin-ipc-client";
-  private static final int MAX_REQUEST_SIZE = 4 * 1024 * 1024; //same as HttpService.maxRequestSize
   private static final int CLIENT_IDLE_TIMEOUT_MILLIS = 10 * 60 * 1000;
   private static final String IPC_DIRECTORY_NAME = ".ipc";
 
   // macOS/Linux sun_path buffers are 104/108 bytes. Reserve one byte for the terminating null
   // and three bytes of portability margin below the smaller macOS limit.
   private static final int MAX_SOCKET_PATH_BYTES = 100;
+
+  private final JsonRpcServer jsonRpcServer;
+  private final int maxRequestSize;
+
   private final ExecutorService acceptorExecutor =
       ExecutorServiceManager.newSingleThreadExecutor(ACCEPTOR_EXECUTOR_NAME, true);
   private final ExecutorService clientExecutor =
       ExecutorServiceManager.newThreadPoolExecutor(4, 16, 60L, TimeUnit.SECONDS,
           new SynchronousQueue<>(), CLIENT_EXECUTOR_NAME, true);
 
-  private volatile boolean isRunning = true;
+  private final Set<AFUNIXSocket> activeClientSockets = ConcurrentHashMap.newKeySet();
   private AFUNIXServerSocket unixServerSocket;
   private Path socketFilePath;
-  private final JsonRpcServer jsonRpcServer;
 
-  private final Set<AFUNIXSocket> activeClientSockets = ConcurrentHashMap.newKeySet();
+  private volatile boolean isRunning;
 
   @Autowired
   public IpcService(AdminJsonRpc adminJsonRpc) {
     enable = isFullNode() && Args.getInstance().isIpcEnable();
+    maxRequestSize = Args.getInstance().maxMessageSize;
     jsonRpcServer = new JsonRpcServer(OBJECT_MAPPER, adminJsonRpc, AdminJsonRpc.class);
     jsonRpcServer.setErrorResolver(JsonRpcErrorResolver.INSTANCE);
     jsonRpcServer.setShouldLogInvocationErrors(false);
@@ -134,7 +137,13 @@ public class IpcService extends AbstractService {
         }
       }
     };
-    ExecutorServiceManager.submit(acceptorExecutor, runnable);
+    isRunning = true;
+    try {
+      ExecutorServiceManager.submit(acceptorExecutor, runnable);
+    } catch (RuntimeException e) {
+      isRunning = false;
+      throw cleanupFailedStart(e);
+    }
   }
 
   private void registerClient(AFUNIXSocket client) {
@@ -191,7 +200,7 @@ public class IpcService extends AbstractService {
     } catch (SocketTimeoutException e) {
       logger.debug("Closing IPC client after {} ms without input", CLIENT_IDLE_TIMEOUT_MILLIS);
     } catch (RequestTooLargeException e) {
-      logger.warn("IPC request exceeds maximum size of {} bytes", MAX_REQUEST_SIZE);
+      logger.warn("IPC request exceeds maximum size of {} bytes", maxRequestSize);
     } catch (IOException e) {
       if (isRunning) {
         logger.error("Client disconnected {}", client);
@@ -206,7 +215,7 @@ public class IpcService extends AbstractService {
       if (value == '\n') {
         break;
       }
-      if (request.size() >= MAX_REQUEST_SIZE) {
+      if (request.size() >= maxRequestSize) {
         throw new RequestTooLargeException();
       }
       request.write(value);
