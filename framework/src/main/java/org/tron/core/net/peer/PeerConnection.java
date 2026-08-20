@@ -234,7 +234,7 @@ public class PeerConnection {
   }
 
   public String log() {
-    ActivePeerInfo stats = getStatsSnapshot();
+    ActivePeerInfo peerInfo = getActivePeerInfo();
     return String.format(
         "Peer %s\n"
             + "connect time: %ds [%sms]\n"
@@ -248,22 +248,22 @@ public class PeerConnection {
             + "syncChainRequested:%d\n"
             + "inactiveSeconds:%d\n"
             + "blockInProcess:%d\n",
-        stats.getRemoteAddress(),
-        stats.getConnectSeconds(),
-        stats.getAverageLatencyMillis(),
-        stats.getLastKnownBlock(),
-        stats.isNeedSyncFromPeer(),
-        stats.isNeedSyncFromUs(),
-        stats.getSyncToFetchSize(),
-        stats.getSyncToFetchSizePeekNum(),
-        stats.getSyncBlockRequestedSize(),
-        stats.getRemainNum(),
-        stats.getSyncChainRequestedMillis() / Constant.ONE_THOUSAND,
-        stats.getInactiveSeconds(),
-        stats.getBlockInProcess());
+        peerInfo.getRemoteAddress(),
+        peerInfo.getConnectSeconds(),
+        peerInfo.getAverageLatencyMillis(),
+        peerInfo.getLastKnownBlock(),
+        peerInfo.isNeedSyncFromPeer(),
+        peerInfo.isNeedSyncFromUs(),
+        peerInfo.getSyncToFetchSize(),
+        peerInfo.getSyncToFetchSizePeekNum(),
+        peerInfo.getSyncBlockRequestedSize(),
+        peerInfo.getRemainNum(),
+        peerInfo.getSyncChainRequestedMillis() / Constant.ONE_THOUSAND,
+        peerInfo.getInactiveSeconds(),
+        peerInfo.getBlockInProcess());
   }
 
-  public ActivePeerInfo getStatsSnapshot() {
+  public ActivePeerInfo getActivePeerInfo() {
     long now = System.currentTimeMillis();
     BlockId syncBlockId = syncBlockToFetch.peek();
     Pair<Deque<BlockId>, Long> requested = syncChainRequested;

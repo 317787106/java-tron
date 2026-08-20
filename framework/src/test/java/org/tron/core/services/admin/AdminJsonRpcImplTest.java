@@ -21,7 +21,7 @@ public class AdminJsonRpcImplTest {
   public void peerManagementMethodsDelegateToSharedService() throws Exception {
     PeerOperationResult peerResult = new PeerOperationResult(true, true, 1, "");
     PeerOperationResult blockedIpResult = new PeerOperationResult(true, true, 2, "");
-    ActivePeerList activePeers = new ActivePeerList(0, 0, 0, 0,
+    ActivePeerListResult activePeers = new ActivePeerListResult(0, 0, 0, 0,
         java.util.Collections.emptyList());
     Mockito.when(peerManagementService.addPeer("192.0.2.20:18888")).thenReturn(peerResult);
     Mockito.when(peerManagementService.removePeer("192.0.2.20:18888")).thenReturn(peerResult);

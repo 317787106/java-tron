@@ -82,7 +82,7 @@ public class PeerManagementService {
   /**
    * Returns current peer connections with the same core statistics used by peer logging.
    */
-  public ActivePeerList listActivePeers() {
+  public ActivePeerListResult listActivePeers() {
     List<PeerConnection> peers = PeerManager.getPeers();
     List<ActivePeerInfo> peerInfos = new ArrayList<>(peers.size());
     int activeCount = 0;
@@ -94,9 +94,9 @@ public class PeerManagementService {
       if (peer.isSyncFinish()) {
         validCount++;
       }
-      peerInfos.add(peer.getStatsSnapshot());
+      peerInfos.add(peer.getActivePeerInfo());
     }
-    return new ActivePeerList(peers.size(), activeCount, peers.size() - activeCount,
+    return new ActivePeerListResult(peers.size(), activeCount, peers.size() - activeCount,
         validCount, peerInfos);
   }
 

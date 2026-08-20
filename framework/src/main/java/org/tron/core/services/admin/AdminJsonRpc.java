@@ -35,7 +35,7 @@ public interface AdminJsonRpc {
       throws JsonRpcInvalidParamsException, JsonRpcInternalException;
 
   @JsonRpcMethod("admin_listActivePeers")
-  ActivePeerList listActivePeers();
+  ActivePeerListResult listActivePeers();
 
   @JsonRpcMethod("admin_blockIp")
   @JsonRpcErrors({

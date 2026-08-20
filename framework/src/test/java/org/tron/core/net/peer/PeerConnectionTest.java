@@ -210,7 +210,7 @@ public class PeerConnectionTest {
   }
 
   @Test
-  public void testStatsSnapshotMatchesPeerLogFields() {
+  public void testActivePeerInfoMatchesPeerLogFields() {
     PeerConnection peerConnection = new PeerConnection();
     InetSocketAddress inetSocketAddress = new InetSocketAddress("127.0.0.2", 10001);
     Channel channel = new Channel();
@@ -228,20 +228,20 @@ public class PeerConnectionTest {
     peerConnection.setSyncChainRequested(
         new Pair<>(new LinkedList<>(), System.currentTimeMillis() - 2_000L));
 
-    ActivePeerInfo stats = peerConnection.getStatsSnapshot();
+    ActivePeerInfo peerInfo = peerConnection.getActivePeerInfo();
     String log = peerConnection.log();
 
-    Assert.assertEquals(String.valueOf(inetSocketAddress), stats.getRemoteAddress());
-    Assert.assertEquals(42L, stats.getAverageLatencyMillis());
-    Assert.assertFalse(stats.isNeedSyncFromPeer());
-    Assert.assertFalse(stats.isNeedSyncFromUs());
-    Assert.assertEquals(1, stats.getSyncToFetchSize());
-    Assert.assertEquals(7L, stats.getSyncToFetchSizePeekNum());
-    Assert.assertEquals(1, stats.getSyncBlockRequestedSize());
-    Assert.assertEquals(9L, stats.getRemainNum());
-    Assert.assertTrue(stats.getSyncChainRequestedMillis() >= 2_000L);
-    Assert.assertEquals(1, stats.getBlockInProcess());
-    Assert.assertTrue(log.contains("Peer " + stats.getRemoteAddress()));
+    Assert.assertEquals(String.valueOf(inetSocketAddress), peerInfo.getRemoteAddress());
+    Assert.assertEquals(42L, peerInfo.getAverageLatencyMillis());
+    Assert.assertFalse(peerInfo.isNeedSyncFromPeer());
+    Assert.assertFalse(peerInfo.isNeedSyncFromUs());
+    Assert.assertEquals(1, peerInfo.getSyncToFetchSize());
+    Assert.assertEquals(7L, peerInfo.getSyncToFetchSizePeekNum());
+    Assert.assertEquals(1, peerInfo.getSyncBlockRequestedSize());
+    Assert.assertEquals(9L, peerInfo.getRemainNum());
+    Assert.assertTrue(peerInfo.getSyncChainRequestedMillis() >= 2_000L);
+    Assert.assertEquals(1, peerInfo.getBlockInProcess());
+    Assert.assertTrue(log.contains("Peer " + peerInfo.getRemoteAddress()));
     Assert.assertTrue(log.contains("syncToFetchSizePeekNum:7"));
     Assert.assertTrue(log.contains("remainNum:9"));
   }

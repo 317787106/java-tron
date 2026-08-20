@@ -457,7 +457,7 @@ public class PeerManagementServiceTest {
     try (MockedStatic<PeerManager> peerManager = Mockito.mockStatic(PeerManager.class)) {
       peerManager.when(PeerManager::getPeers).thenReturn(Arrays.asList(activePeer, passivePeer));
 
-      ActivePeerList result = service.listActivePeers();
+      ActivePeerListResult result = service.listActivePeers();
 
       Assert.assertEquals(2, result.getAllCount());
       Assert.assertEquals(1, result.getActiveCount());
@@ -474,7 +474,7 @@ public class PeerManagementServiceTest {
     try (MockedStatic<PeerManager> peerManager = Mockito.mockStatic(PeerManager.class)) {
       peerManager.when(PeerManager::getPeers).thenReturn(Collections.emptyList());
 
-      ActivePeerList result = service.listActivePeers();
+      ActivePeerListResult result = service.listActivePeers();
 
       Assert.assertEquals(0, result.getAllCount());
       Assert.assertEquals(0, result.getActiveCount());
@@ -538,13 +538,13 @@ public class PeerManagementServiceTest {
       long averageLatencyMillis) {
     PeerConnection peer = Mockito.mock(PeerConnection.class);
     Channel channel = Mockito.mock(Channel.class);
-    ActivePeerInfo stats = Mockito.mock(ActivePeerInfo.class);
+    ActivePeerInfo peerInfo = Mockito.mock(ActivePeerInfo.class);
     Mockito.when(channel.isActive()).thenReturn(active);
     Mockito.when(peer.getChannel()).thenReturn(channel);
     Mockito.when(peer.isSyncFinish()).thenReturn(syncFinished);
-    Mockito.when(peer.getStatsSnapshot()).thenReturn(stats);
-    Mockito.when(stats.getRemoteAddress()).thenReturn(remoteAddress);
-    Mockito.when(stats.getAverageLatencyMillis()).thenReturn(averageLatencyMillis);
+    Mockito.when(peer.getActivePeerInfo()).thenReturn(peerInfo);
+    Mockito.when(peerInfo.getRemoteAddress()).thenReturn(remoteAddress);
+    Mockito.when(peerInfo.getAverageLatencyMillis()).thenReturn(averageLatencyMillis);
     return peer;
   }
 

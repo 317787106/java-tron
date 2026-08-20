@@ -35,7 +35,7 @@ public class AdminJsonRpcImpl implements AdminJsonRpc {
   }
 
   @Override
-  public ActivePeerList listActivePeers() {
+  public ActivePeerListResult listActivePeers() {
     return peerManagementService.listActivePeers();
   }
 

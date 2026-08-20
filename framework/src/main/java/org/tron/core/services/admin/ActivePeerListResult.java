@@ -7,7 +7,7 @@ import lombok.Getter;
 import org.tron.core.net.peer.ActivePeerInfo;
 
 @Getter
-public class ActivePeerList {
+public class ActivePeerListResult {
 
   private final int allCount;
   private final int activeCount;
@@ -15,7 +15,7 @@ public class ActivePeerList {
   private final int validCount;
   private final List<ActivePeerInfo> peers;
 
-  public ActivePeerList(int allCount, int activeCount, int passiveCount, int validCount,
+  public ActivePeerListResult(int allCount, int activeCount, int passiveCount, int validCount,
       List<ActivePeerInfo> peers) {
     this.allCount = allCount;
     this.activeCount = activeCount;
