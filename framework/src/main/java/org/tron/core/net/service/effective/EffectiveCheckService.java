@@ -2,6 +2,7 @@ package org.tron.core.net.service.effective;
 
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
+import io.netty.channel.ChannelFuture;
 import java.net.InetSocketAddress;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -122,20 +123,27 @@ public class EffectiveCheckService {
         chosenNode.get().getPreferInetSocketAddress().getPort());
 
     logger.info("Try to get effective connection by using {} at seq {}", cur, count.get());
-    TronNetService.getP2pService().connect(chosenNode.get(), future -> {
-      if (future.isCancelled()) {
-        // Connection attempt cancelled by user
-        cur = null;
-      } else if (!future.isSuccess()) {
-        // You might get a NullPointerException here because the future might not be completed yet.
-        logger.warn("Connect to chosen peer {} fail, cause:{}", cur, future.cause().getMessage());
-        future.channel().close();
-        cur = null;
-        triggerNext();
-      } else {
-        // Connection established successfully
-      }
-    });
+    ChannelFuture channelFuture = TronNetService.getP2pService()
+        .connect(chosenNode.get(), future -> {
+          if (future.isCancelled()) {
+            // Connection attempt cancelled by user
+            cur = null;
+          } else if (!future.isSuccess()) {
+            // You might get a NullPointerException here because the future might not be
+            // completed yet.
+            logger.warn("Connect to chosen peer {} fail, cause:{}",
+                cur, future.cause().getMessage());
+            future.channel().close();
+            cur = null;
+            triggerNext();
+          } else {
+            // Connection established successfully
+          }
+        });
+    if (channelFuture == null) {
+      logger.warn("Connection to chosen peer {} was not scheduled", cur);
+      cur = null;
+    }
   }
 
   private void resetCount() {

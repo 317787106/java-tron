@@ -47,7 +47,13 @@ public class IpcClientTest {
     IpcClient client = new IpcClient("unused");
 
     Assert.assertEquals(Arrays.asList(
-        "admin_example <param1:string> <param2:string>",
+        "admin_addPeer <endpoint:string>",
+        "admin_blockIp <ip:string>",
+        "admin_disconnectPeer <endpoint:string>",
+        "admin_listActivePeers",
+        "admin_listBlockedIps",
+        "admin_removePeer <endpoint:string>",
+        "admin_unblockIp <ip:string>",
         "help [command]",
         "exit/quit"), client.buildHelpLines());
   }
@@ -57,7 +63,13 @@ public class IpcClientTest {
     IpcClient client = new IpcClient("unused");
 
     Assert.assertArrayEquals(new String[] {
-        "admin_example"
+        "admin_addPeer",
+        "admin_blockIp",
+        "admin_disconnectPeer",
+        "admin_listActivePeers",
+        "admin_listBlockedIps",
+        "admin_removePeer",
+        "admin_unblockIp"
     }, client.getCompletionCommandNames());
   }
 
@@ -75,8 +87,8 @@ public class IpcClientTest {
   public void testParseCommandLinePreservesQuotedArguments() {
     IpcClient client = new IpcClient("unused");
 
-    Assert.assertEquals(Arrays.asList("admin_example", " hello world ", "second value"),
-        client.parseCommandLine(" \tadmin_example \" hello world \" 'second value'  "));
+    Assert.assertEquals(Arrays.asList("custom_method", " hello world ", "second value"),
+        client.parseCommandLine(" \tcustom_method \" hello world \" 'second value'  "));
   }
 
   @Test
@@ -130,7 +142,7 @@ public class IpcClientTest {
     ByteArrayOutputStream requestOutput = new ByteArrayOutputStream();
     Mockito.when(socket.getOutputStream()).thenReturn(requestOutput);
     Mockito.when(socket.getInputStream()).thenReturn(new ByteArrayInputStream(
-        "\n{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":\"hello world:b\"}\n"
+        "\n{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":\"added\"}\n"
             .getBytes(StandardCharsets.UTF_8)));
 
     PrintStream originalOut = System.out;
@@ -139,17 +151,17 @@ public class IpcClientTest {
     try {
       System.setOut(capturedOut);
       Assert.assertEquals(IpcClient.EXIT_SUCCESS,
-          new IpcClient("unused").runExec(socket, "  admin_example \"hello world\" b \t"));
+          new IpcClient("unused").runExec(socket,
+              "  admin_addPeer \"192.0.2.20:18888\" \t"));
     } finally {
       System.setOut(originalOut);
       capturedOut.close();
     }
 
     JsonNode request = OBJECT_MAPPER.readTree(requestOutput.toString("UTF-8"));
-    Assert.assertEquals("admin_example", request.get("method").asText());
-    Assert.assertEquals("hello world", request.get("params").get(0).asText());
-    Assert.assertEquals("b", request.get("params").get(1).asText());
-    Assert.assertEquals("hello world:b" + System.lineSeparator(),
+    Assert.assertEquals("admin_addPeer", request.get("method").asText());
+    Assert.assertEquals("192.0.2.20:18888", request.get("params").get(0).asText());
+    Assert.assertEquals("added" + System.lineSeparator(),
         consoleOutput.toString("UTF-8"));
   }
 
@@ -185,7 +197,7 @@ public class IpcClientTest {
       System.setErr(capturedErr);
       Assert.assertEquals(IpcClient.EXIT_FAILURE,
           new IpcClient("unused").runExec(Mockito.mock(Socket.class),
-              "admin_example \"sensitive-value"));
+              "admin_addPeer \"sensitive-value"));
     } finally {
       System.setErr(originalErr);
       capturedErr.close();
@@ -233,7 +245,7 @@ public class IpcClientTest {
     try {
       System.setErr(capturedErr);
       Assert.assertEquals(IpcClient.EXIT_FAILURE,
-          new IpcClient("unused").runExec(socket, "admin_example a b"));
+          new IpcClient("unused").runExec(socket, "admin_listBlockedIps"));
     } finally {
       System.setErr(originalErr);
       capturedErr.close();
@@ -255,7 +267,7 @@ public class IpcClientTest {
     try {
       System.setErr(capturedErr);
       Assert.assertEquals(IpcClient.EXIT_FAILURE,
-          new IpcClient("unused").runExec(socket, "admin_example a b"));
+          new IpcClient("unused").runExec(socket, "admin_listBlockedIps"));
     } finally {
       System.setErr(originalErr);
       capturedErr.close();
@@ -283,7 +295,7 @@ public class IpcClientTest {
     try {
       System.setErr(capturedErr);
       Assert.assertEquals(IpcClient.EXIT_FAILURE,
-          new IpcClient("unused").runExec(socket, "admin_example a b"));
+          new IpcClient("unused").runExec(socket, "admin_listBlockedIps"));
     } finally {
       System.setErr(originalErr);
       capturedErr.close();

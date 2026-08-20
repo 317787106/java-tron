@@ -234,9 +234,7 @@ public class PeerConnection {
   }
 
   public String log() {
-    long now = System.currentTimeMillis();
-    BlockId syncBlockId = syncBlockToFetch.peek();
-    Pair<Deque<BlockId>, Long> requested = syncChainRequested;
+    ActivePeerInfo stats = getStatsSnapshot();
     return String.format(
         "Peer %s\n"
             + "connect time: %ds [%sms]\n"
@@ -250,19 +248,41 @@ public class PeerConnection {
             + "syncChainRequested:%d\n"
             + "inactiveSeconds:%d\n"
             + "blockInProcess:%d\n",
-        channel.getInetSocketAddress(),
+        stats.getRemoteAddress(),
+        stats.getConnectSeconds(),
+        stats.getAverageLatencyMillis(),
+        stats.getLastKnownBlock(),
+        stats.isNeedSyncFromPeer(),
+        stats.isNeedSyncFromUs(),
+        stats.getSyncToFetchSize(),
+        stats.getSyncToFetchSizePeekNum(),
+        stats.getSyncBlockRequestedSize(),
+        stats.getRemainNum(),
+        stats.getSyncChainRequestedMillis() / Constant.ONE_THOUSAND,
+        stats.getInactiveSeconds(),
+        stats.getBlockInProcess());
+  }
+
+  public ActivePeerInfo getStatsSnapshot() {
+    long now = System.currentTimeMillis();
+    BlockId syncBlockId = syncBlockToFetch.peek();
+    Pair<Deque<BlockId>, Long> requested = syncChainRequested;
+    String lastKnownBlock = fastForwardBlock != null
+        ? String.valueOf(fastForwardBlock.getNum())
+        : String.format("%d [%ds]", blockBothHave.getNum(),
+            (now - blockBothHaveUpdateTime) / Constant.ONE_THOUSAND);
+    return new ActivePeerInfo(
+        String.valueOf(channel.getInetSocketAddress()),
         (now - channel.getStartTime()) / Constant.ONE_THOUSAND,
         channel.getAvgLatency(),
-        fastForwardBlock != null ? fastForwardBlock.getNum() : String.format("%d [%ds]",
-            blockBothHave.getNum(), (now - blockBothHaveUpdateTime) / Constant.ONE_THOUSAND),
+        lastKnownBlock,
         isNeedSyncFromPeer(),
         isNeedSyncFromUs(),
         syncBlockToFetch.size(),
         syncBlockId != null ? syncBlockId.getNum() : -1,
         syncBlockRequested.size(),
         remainNum,
-        requested == null ? 0 : (now - requested.getValue())
-                / Constant.ONE_THOUSAND,
+        requested == null ? 0 : now - requested.getValue(),
         (now - lastInteractiveTime) / Constant.ONE_THOUSAND,
         syncBlockInProcess.size());
   }

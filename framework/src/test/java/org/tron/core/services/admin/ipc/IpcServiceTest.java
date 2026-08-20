@@ -21,6 +21,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.attribute.PosixFilePermission;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.EnumSet;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
@@ -41,9 +42,12 @@ import org.tron.common.parameter.CommonParameter;
 import org.tron.core.Constant;
 import org.tron.core.config.args.Args;
 import org.tron.core.exception.TronError;
+import org.tron.core.exception.jsonrpc.JsonRpcInternalException;
 import org.tron.core.exception.jsonrpc.JsonRpcInvalidParamsException;
 import org.tron.core.services.admin.AdminJsonRpc;
 import org.tron.core.services.admin.AdminJsonRpcImpl;
+import org.tron.core.services.admin.PeerManagementService;
+import org.tron.core.services.admin.PeerOperationResult;
 
 public class IpcServiceTest {
 
@@ -258,29 +262,67 @@ public class IpcServiceTest {
 
   @Test
   public void testHandleCommandReturnsSingleLineJsonResponse() throws Exception {
-    IpcService service = new IpcService(
-        new AdminJsonRpcImpl());
+    IpcService service = newIpcService();
 
     String response = service.handleCommand(
-        "{\"jsonrpc\":\"2.0\",\"method\":\"admin_example\","
-            + "\"params\":[\"a\",\"b\"],\"id\":7}");
+        "{\"jsonrpc\":\"2.0\",\"method\":\"admin_listBlockedIps\",\"id\":7}");
 
     Assert.assertFalse(response, response.contains("\n"));
     Assert.assertFalse(response, response.contains("\r"));
-    Assert.assertEquals("a:b", new ObjectMapper().readTree(response).get("result").asText());
+    Assert.assertEquals(0, new ObjectMapper().readTree(response).get("result").size());
+  }
+
+  @Test
+  public void testHandleCommandDispatchesPeerManagementMethod() throws Exception {
+    PeerManagementService peerManagementService = Mockito.mock(PeerManagementService.class);
+    Mockito.when(peerManagementService.addPeer("192.0.2.20:18888"))
+        .thenReturn(new PeerOperationResult(true, true, 0, ""));
+    IpcService service = new IpcService(new AdminJsonRpcImpl(peerManagementService));
+
+    String response = service.handleCommand(
+        "{\"jsonrpc\":\"2.0\",\"method\":\"admin_addPeer\","
+            + "\"params\":[\"192.0.2.20:18888\"],\"id\":8}");
+    JsonNode result = new ObjectMapper().readTree(response).get("result");
+
+    Assert.assertTrue(result.get("success").asBoolean());
+    Assert.assertTrue(result.get("changed").asBoolean());
+    Assert.assertEquals(0, result.get("disconnectedCount").asInt());
+    Mockito.verify(peerManagementService).addPeer("192.0.2.20:18888");
+  }
+
+  @Test
+  public void testPeerManagementErrorsUseAnnotatedJsonRpcCodes() throws Exception {
+    PeerManagementService peerManagementService = Mockito.mock(PeerManagementService.class);
+    Mockito.when(peerManagementService.addPeer("invalid"))
+        .thenThrow(new JsonRpcInvalidParamsException("Invalid peer endpoint"));
+    Mockito.when(peerManagementService.addPeer("192.0.2.20:18888"))
+        .thenThrow(new JsonRpcInternalException("P2P service is not ready"));
+    IpcService service = new IpcService(new AdminJsonRpcImpl(peerManagementService));
+
+    JsonNode invalidParams = new ObjectMapper().readTree(service.handleCommand(
+        "{\"jsonrpc\":\"2.0\",\"method\":\"admin_addPeer\","
+            + "\"params\":[\"invalid\"],\"id\":11}"));
+    JsonNode internalError = new ObjectMapper().readTree(service.handleCommand(
+        "{\"jsonrpc\":\"2.0\",\"method\":\"admin_addPeer\","
+            + "\"params\":[\"192.0.2.20:18888\"],\"id\":12}"));
+
+    Assert.assertEquals(-32602, invalidParams.get("error").get("code").asInt());
+    Assert.assertEquals("Invalid peer endpoint",
+        invalidParams.get("error").get("message").asText());
+    Assert.assertEquals(-32000, internalError.get("error").get("code").asInt());
+    Assert.assertEquals("P2P service is not ready",
+        internalError.get("error").get("message").asText());
   }
 
   @Test
   public void testHandleCommandReturnsJsonRpcErrorOnDispatcherFailure() throws Exception {
-    IpcService service = Mockito.spy(new IpcService(
-        new AdminJsonRpcImpl()));
+    IpcService service = Mockito.spy(newIpcService());
     Mockito.doThrow(new IOException("sensitive-detail"))
         .when(service).dispatchRequest(Mockito.any(ByteArrayInputStream.class),
             Mockito.any(ByteArrayOutputStream.class));
 
     String response = service.handleCommand(
-        "{\"jsonrpc\":\"2.0\",\"method\":\"admin_example\","
-            + "\"params\":[\"a\",\"b\"],\"id\":9}");
+        "{\"jsonrpc\":\"2.0\",\"method\":\"admin_listBlockedIps\",\"id\":9}");
     JsonNode responseNode = new ObjectMapper().readTree(response);
 
     Assert.assertEquals("2.0", responseNode.get("jsonrpc").asText());
@@ -294,13 +336,13 @@ public class IpcServiceTest {
   @Test
   public void testHandleCommandUsesAnnotatedErrorResolver() throws Exception {
     AdminJsonRpc adminJsonRpc = Mockito.mock(AdminJsonRpc.class);
-    Mockito.when(adminJsonRpc.adminExample("a", "b"))
+    Mockito.when(adminJsonRpc.addPeer("invalid"))
         .thenThrow(new JsonRpcInvalidParamsException("Invalid admin parameters"));
     IpcService service = new IpcService(adminJsonRpc);
 
     String response = service.handleCommand(
-        "{\"jsonrpc\":\"2.0\",\"method\":\"admin_example\","
-            + "\"params\":[\"a\",\"b\"],\"id\":10}");
+        "{\"jsonrpc\":\"2.0\",\"method\":\"admin_addPeer\","
+            + "\"params\":[\"invalid\"],\"id\":10}");
     JsonNode responseNode = new ObjectMapper().readTree(response);
 
     Assert.assertEquals(-32602, responseNode.get("error").get("code").asInt());
@@ -356,8 +398,7 @@ public class IpcServiceTest {
     CommonParameter parameter = Args.getInstance();
     String originalOutputDirectory = parameter.outputDirectory;
     Path outputDirectory = Files.createTempDirectory(Paths.get("/tmp"), "ipc-permission-test-");
-    IpcService service = new IpcService(
-        new AdminJsonRpcImpl());
+    IpcService service = newIpcService();
     boolean started = false;
     Path socketFile = null;
     try {
@@ -459,8 +500,7 @@ public class IpcServiceTest {
     CommonParameter parameter = Args.getInstance();
     String originalOutputDirectory = parameter.outputDirectory;
     Path outputDirectory = Files.createTempDirectory(Paths.get("/tmp"), "ipc-multi-client-test-");
-    IpcService service = new IpcService(
-        new AdminJsonRpcImpl());
+    IpcService service = newIpcService();
     boolean started = false;
     Path socketFile = null;
     try {
@@ -550,8 +590,7 @@ public class IpcServiceTest {
     CommonParameter parameter = Args.getInstance();
     String originalOutputDirectory = parameter.outputDirectory;
     Path outputDirectory = Files.createTempDirectory(Paths.get("/tmp"), "ipc-test-");
-    IpcService service = new IpcService(
-        new AdminJsonRpcImpl());
+    IpcService service = newIpcService();
     boolean started = false;
     Path socketFile = null;
     try {
@@ -568,8 +607,8 @@ public class IpcServiceTest {
             new OutputStreamWriter(client.getOutputStream(), StandardCharsets.UTF_8));
             BufferedReader reader = new BufferedReader(
                 new InputStreamReader(client.getInputStream(), StandardCharsets.UTF_8))) {
-          writer.write("{\"jsonrpc\":\"2.0\",\"method\":\"admin_example\","
-              + "\"params\":[\"a\",\"b\"],\"id\":1}");
+          writer.write(
+              "{\"jsonrpc\":\"2.0\",\"method\":\"admin_listBlockedIps\",\"id\":1}");
           writer.newLine();
           writer.flush();
           Assert.assertNotNull(reader.readLine());
@@ -669,7 +708,9 @@ public class IpcServiceTest {
   }
 
   private IpcService newIpcService() {
-    return new IpcService(new AdminJsonRpcImpl());
+    PeerManagementService peerManagementService = Mockito.mock(PeerManagementService.class);
+    Mockito.when(peerManagementService.listBlockedIps()).thenReturn(Collections.emptyList());
+    return new IpcService(new AdminJsonRpcImpl(peerManagementService));
   }
 
   private void cleanupIpcService(IpcService service, boolean started, CommonParameter parameter,
@@ -797,8 +838,8 @@ public class IpcServiceTest {
 
   private String sendRequest(BufferedWriter writer, BufferedReader reader, int requestId)
       throws IOException {
-    writer.write("{\"jsonrpc\":\"2.0\",\"method\":\"admin_example\","
-        + "\"params\":[\"a\",\"b\"],\"id\":" + requestId + "}");
+    writer.write("{\"jsonrpc\":\"2.0\",\"method\":\"admin_listBlockedIps\","
+        + "\"id\":" + requestId + "}");
     writer.newLine();
     writer.flush();
     return reader.readLine();
@@ -806,7 +847,7 @@ public class IpcServiceTest {
 
   private void assertSuccessfulResponse(String response, int requestId) {
     Assert.assertNotNull(response);
-    Assert.assertTrue(response, response.contains("\"result\":\"a:b\""));
+    Assert.assertTrue(response, response.contains("\"result\":[]"));
     Assert.assertTrue(response, response.contains("\"id\":" + requestId));
   }
 

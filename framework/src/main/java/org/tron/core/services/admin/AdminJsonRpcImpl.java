@@ -1,15 +1,58 @@
 package org.tron.core.services.admin;
 
+import java.util.List;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
+import org.tron.core.exception.jsonrpc.JsonRpcInternalException;
 import org.tron.core.exception.jsonrpc.JsonRpcInvalidParamsException;
 
 @Component
 public class AdminJsonRpcImpl implements AdminJsonRpc {
+
+  private final PeerManagementService peerManagementService;
+
+  @Autowired
+  public AdminJsonRpcImpl(PeerManagementService peerManagementService) {
+    this.peerManagementService = peerManagementService;
+  }
+
   @Override
-  public String adminExample(String param1, String param2) throws JsonRpcInvalidParamsException {
-    if ("".equals(param1) || "".equals(param2)) {
-      throw new JsonRpcInvalidParamsException("param1 or param2 should not be empty");
-    }
-    return param1 + ":" + param2;
+  public PeerOperationResult addPeer(String endpoint)
+      throws JsonRpcInvalidParamsException, JsonRpcInternalException {
+    return peerManagementService.addPeer(endpoint);
+  }
+
+  @Override
+  public PeerOperationResult removePeer(String endpoint)
+      throws JsonRpcInvalidParamsException, JsonRpcInternalException {
+    return peerManagementService.removePeer(endpoint);
+  }
+
+  @Override
+  public PeerOperationResult disconnectPeer(String endpoint)
+      throws JsonRpcInvalidParamsException, JsonRpcInternalException {
+    return peerManagementService.disconnectPeer(endpoint);
+  }
+
+  @Override
+  public ActivePeerList listActivePeers() {
+    return peerManagementService.listActivePeers();
+  }
+
+  @Override
+  public PeerOperationResult blockIp(String ip)
+      throws JsonRpcInvalidParamsException, JsonRpcInternalException {
+    return peerManagementService.blockIp(ip);
+  }
+
+  @Override
+  public PeerOperationResult unblockIp(String ip)
+      throws JsonRpcInvalidParamsException, JsonRpcInternalException {
+    return peerManagementService.unblockIp(ip);
+  }
+
+  @Override
+  public List<String> listBlockedIps() {
+    return peerManagementService.listBlockedIps();
   }
 }

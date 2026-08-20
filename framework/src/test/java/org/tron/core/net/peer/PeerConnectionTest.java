@@ -210,6 +210,43 @@ public class PeerConnectionTest {
   }
 
   @Test
+  public void testStatsSnapshotMatchesPeerLogFields() {
+    PeerConnection peerConnection = new PeerConnection();
+    InetSocketAddress inetSocketAddress = new InetSocketAddress("127.0.0.2", 10001);
+    Channel channel = new Channel();
+    ReflectUtils.setFieldValue(channel, "inetSocketAddress", inetSocketAddress);
+    ReflectUtils.setFieldValue(channel, "inetAddress", inetSocketAddress.getAddress());
+    channel.updateAvgLatency(42L);
+    peerConnection.setChannel(channel);
+    peerConnection.setNeedSyncFromPeer(false);
+    peerConnection.setNeedSyncFromUs(false);
+    peerConnection.setRemainNum(9L);
+    BlockCapsule.BlockId fetchBlock = new BlockCapsule.BlockId(Sha256Hash.ZERO_HASH, 7L);
+    peerConnection.getSyncBlockToFetch().add(fetchBlock);
+    peerConnection.getSyncBlockRequested().put(fetchBlock, System.currentTimeMillis());
+    peerConnection.getSyncBlockInProcess().add(fetchBlock);
+    peerConnection.setSyncChainRequested(
+        new Pair<>(new LinkedList<>(), System.currentTimeMillis() - 2_000L));
+
+    ActivePeerInfo stats = peerConnection.getStatsSnapshot();
+    String log = peerConnection.log();
+
+    Assert.assertEquals(String.valueOf(inetSocketAddress), stats.getRemoteAddress());
+    Assert.assertEquals(42L, stats.getAverageLatencyMillis());
+    Assert.assertFalse(stats.isNeedSyncFromPeer());
+    Assert.assertFalse(stats.isNeedSyncFromUs());
+    Assert.assertEquals(1, stats.getSyncToFetchSize());
+    Assert.assertEquals(7L, stats.getSyncToFetchSizePeekNum());
+    Assert.assertEquals(1, stats.getSyncBlockRequestedSize());
+    Assert.assertEquals(9L, stats.getRemainNum());
+    Assert.assertTrue(stats.getSyncChainRequestedMillis() >= 2_000L);
+    Assert.assertEquals(1, stats.getBlockInProcess());
+    Assert.assertTrue(log.contains("Peer " + stats.getRemoteAddress()));
+    Assert.assertTrue(log.contains("syncToFetchSizePeekNum:7"));
+    Assert.assertTrue(log.contains("remainNum:9"));
+  }
+
+  @Test
   public void testIsSyncFinish() {
     PeerConnection peerConnection = new PeerConnection();
     boolean f = peerConnection.isSyncFinish();
