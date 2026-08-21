@@ -585,6 +585,43 @@ public class IpcServiceTest {
   }
 
   @Test(timeout = 5_000)
+  public void testStopDoesNotWaitForUnresponsiveClientWorker() throws Exception {
+    IpcService service = newIpcService();
+    ExecutorService clientExecutor = getExecutorService(service, "clientExecutor");
+    CountDownLatch workerStarted = new CountDownLatch(1);
+    CountDownLatch releaseWorker = new CountDownLatch(1);
+    clientExecutor.submit(() -> {
+      workerStarted.countDown();
+      boolean interrupted = false;
+      while (true) {
+        try {
+          releaseWorker.await();
+          break;
+        } catch (InterruptedException e) {
+          interrupted = true;
+        }
+      }
+      if (interrupted) {
+        Thread.currentThread().interrupt();
+      }
+    });
+    Assert.assertTrue("Expected the client worker to start",
+        workerStarted.await(2, TimeUnit.SECONDS));
+
+    try {
+      service.innerStop();
+
+      Assert.assertTrue(clientExecutor.isShutdown());
+      Assert.assertFalse("The unresponsive worker should still be running",
+          clientExecutor.isTerminated());
+    } finally {
+      releaseWorker.countDown();
+      Assert.assertTrue("Expected the released client worker to terminate",
+          clientExecutor.awaitTermination(2, TimeUnit.SECONDS));
+    }
+  }
+
+  @Test(timeout = 5_000)
   public void testInnerStopContinuesCleanupAfterServerCloseFailure() throws Exception {
     IpcService service = newIpcService();
     AFUNIXServerSocket serverSocket = Mockito.mock(AFUNIXServerSocket.class);
