@@ -260,7 +260,7 @@ public class NodeConfig {
   public static class AdminConfig {
 
     private AdminIpcConfig ipc = new AdminIpcConfig();
-    private AdminRpcConfig rpc = new AdminRpcConfig();
+    private AdminHttpConfig http = new AdminHttpConfig();
   }
 
   @Getter
@@ -273,7 +273,7 @@ public class NodeConfig {
 
   @Getter
   @Setter
-  public static class AdminRpcConfig {
+  public static class AdminHttpConfig {
 
     private boolean enable = false;
     private String listenAddress = Constant.LOCAL_HOST;

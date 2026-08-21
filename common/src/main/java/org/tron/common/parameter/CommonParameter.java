@@ -616,19 +616,20 @@ public class CommonParameter {
   @Getter
   @Setter
   @Exportable
-  public boolean adminRpcEnable = false;
+  public boolean adminHttpEnable = false;
   @Getter
   @Setter
   @Exportable
-  public String adminListenAddress = Constant.LOCAL_HOST;
+  public String adminHttpListenAddress = Constant.LOCAL_HOST;
   @Getter
   @Setter
   @Exportable
-  public int adminListenPort = 8575;
+  public int adminHttpListenPort = 8575;
   @Getter
   @Setter
   @Exportable
-  public List<String> adminVirtualHosts = new ArrayList<>(Collections.singletonList("localhost"));
+  public List<String> adminHttpVirtualHosts =
+      new ArrayList<>(Collections.singletonList("localhost"));
   @Getter
   @Setter
   @Exportable

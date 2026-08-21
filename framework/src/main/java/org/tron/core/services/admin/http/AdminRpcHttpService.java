@@ -23,16 +23,16 @@ public class AdminRpcHttpService extends HttpService {
   private AdminRpcServlet adminRpcServlet;
 
   public AdminRpcHttpService() {
-    enable = isFullNode() && Args.getInstance().isAdminRpcEnable();
-    listenAddress = Args.getInstance().getAdminListenAddress();
-    port = Args.getInstance().getAdminListenPort();
+    enable = isFullNode() && Args.getInstance().isAdminHttpEnable();
+    listenAddress = Args.getInstance().getAdminHttpListenAddress();
+    port = Args.getInstance().getAdminHttpListenPort();
     contextPath = "/";
   }
 
   @Override
   public void innerStart() throws Exception {
     if (enable && !isLoopbackListenAddress(listenAddress)) {
-      logger.warn("Admin RPC is enabled on {} and may be accessible remotely. "
+      logger.warn("Admin HTTP is enabled on {} and may be accessible remotely. "
           + "Restrict access to trusted networks.", listenAddress);
     }
     super.innerStart();
