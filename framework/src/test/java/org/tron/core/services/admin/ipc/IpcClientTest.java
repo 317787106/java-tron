@@ -3,6 +3,8 @@ package org.tron.core.services.admin.ipc;
 import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.databind.type.TypeFactory;
 import com.googlecode.jsonrpc4j.JsonRpcMethod;
 import java.io.ByteArrayInputStream;
@@ -50,7 +52,7 @@ public class IpcClientTest {
         "admin_addPeer <endpoint:string>",
         "admin_blockIp <ip:string>",
         "admin_disconnectPeer <endpoint:string>",
-        "admin_listActivePeers",
+        "admin_listActivePeers [format:json|text]",
         "admin_listBlockedIps",
         "admin_removePeer <endpoint:string>",
         "admin_unblockIp <ip:string>",
@@ -134,6 +136,77 @@ public class IpcClientTest {
         "{\"jsonrpc\":\"2.0\",\"id\":1,"
             + "\"error\":{\"code\":-32602,\"message\":\"Invalid params\"}}"));
     Assert.assertEquals("", client.formatResponse(""));
+  }
+
+  @Test
+  public void testListActivePeersDefaultsAndExplicitJsonKeepRpcRequestUnchanged()
+      throws Exception {
+    for (String command : Arrays.asList(
+        "admin_listActivePeers", "admin_listActivePeers json")) {
+      ExecResult execution = executeCommand(command,
+          createActivePeersResponse("192.0.2.20:18888"));
+
+      Assert.assertEquals(IpcClient.EXIT_SUCCESS, execution.exitCode);
+      JsonNode request = OBJECT_MAPPER.readTree(execution.request);
+      Assert.assertEquals("admin_listActivePeers", request.get("method").asText());
+      Assert.assertEquals(0, request.get("params").size());
+      Assert.assertTrue(execution.standardOutput,
+          execution.standardOutput.contains("\"allCount\" : 1"));
+      Assert.assertTrue(execution.standardOutput,
+          execution.standardOutput.contains("\"remoteAddress\" : \"192.0.2.20:18888\""));
+      Assert.assertFalse(execution.standardOutput,
+          execution.standardOutput.contains(" | "));
+      Assert.assertEquals("", execution.errorOutput);
+    }
+  }
+
+  @Test
+  public void testListActivePeersTextRendersTableWithoutChangingRpcRequest() throws Exception {
+    ExecResult execution = executeCommand("admin_listActivePeers text",
+        createActivePeersResponse("192.0.2.20:18888"));
+
+    Assert.assertEquals(IpcClient.EXIT_SUCCESS, execution.exitCode);
+    JsonNode request = OBJECT_MAPPER.readTree(execution.request);
+    Assert.assertEquals("admin_listActivePeers", request.get("method").asText());
+    Assert.assertEquals(0, request.get("params").size());
+    Assert.assertTrue(execution.standardOutput,
+        execution.standardOutput.contains("Peers: all=1, active=1, passive=0, valid=1"));
+    for (String field : Arrays.asList(
+        "remoteAddress", "connectSeconds", "averageLatencyMillis", "lastKnownBlockNum",
+        "needSyncFromPeer", "needSyncFromUs", "syncToFetchSize", "syncToFetchSizePeekNum",
+        "syncBlockRequestedSize", "remainNum", "syncChainRequestedMillis", "inactiveSeconds",
+        "blockInProcess")) {
+      Assert.assertTrue(field, execution.standardOutput.contains(field));
+    }
+    Assert.assertTrue(execution.standardOutput,
+        execution.standardOutput.contains("192.0.2.20:18888"));
+    Assert.assertFalse(execution.standardOutput,
+        execution.standardOutput.contains("\"remoteAddress\""));
+    Assert.assertEquals("", execution.errorOutput);
+  }
+
+  @Test
+  public void testListActivePeersTextSanitizesTerminalControlCharacters() throws Exception {
+    ExecResult execution = executeCommand("admin_listActivePeers text",
+        createActivePeersResponse("peer\u001b[31m|address"));
+
+    Assert.assertEquals(IpcClient.EXIT_SUCCESS, execution.exitCode);
+    Assert.assertFalse(execution.standardOutput,
+        execution.standardOutput.contains("\u001b"));
+    Assert.assertTrue(execution.standardOutput,
+        execution.standardOutput.contains("peer?[31m?address"));
+  }
+
+  @Test
+  public void testListActivePeersRejectsUnsupportedOutputFormat() throws Exception {
+    ExecResult execution = executeCommand("admin_listActivePeers yaml",
+        createActivePeersResponse("192.0.2.20:18888"));
+
+    Assert.assertEquals(IpcClient.EXIT_FAILURE, execution.exitCode);
+    Assert.assertEquals("", execution.request);
+    Assert.assertEquals("", execution.standardOutput);
+    Assert.assertEquals("Invalid value for <format>; expected json or text"
+        + System.lineSeparator(), execution.errorOutput);
   }
 
   @Test
@@ -399,6 +472,76 @@ public class IpcClientTest {
       } catch (IllegalStateException e) {
         Assert.assertSame(expected, e);
       }
+    }
+  }
+
+  private ExecResult executeCommand(String command, String response) throws Exception {
+    Socket socket = Mockito.mock(Socket.class);
+    ByteArrayOutputStream requestOutput = new ByteArrayOutputStream();
+    Mockito.when(socket.getOutputStream()).thenReturn(requestOutput);
+    Mockito.when(socket.getInputStream()).thenReturn(new ByteArrayInputStream(
+        (response + "\n").getBytes(StandardCharsets.UTF_8)));
+
+    PrintStream originalOut = System.out;
+    PrintStream originalErr = System.err;
+    ByteArrayOutputStream standardOutput = new ByteArrayOutputStream();
+    ByteArrayOutputStream errorOutput = new ByteArrayOutputStream();
+    PrintStream capturedOut = new PrintStream(standardOutput, true, "UTF-8");
+    PrintStream capturedErr = new PrintStream(errorOutput, true, "UTF-8");
+    int exitCode;
+    try {
+      System.setOut(capturedOut);
+      System.setErr(capturedErr);
+      exitCode = new IpcClient("unused").runExec(socket, command);
+    } finally {
+      System.setOut(originalOut);
+      System.setErr(originalErr);
+      capturedOut.close();
+      capturedErr.close();
+    }
+    return new ExecResult(exitCode, requestOutput.toString("UTF-8"),
+        standardOutput.toString("UTF-8"), errorOutput.toString("UTF-8"));
+  }
+
+  private String createActivePeersResponse(String remoteAddress) throws Exception {
+    ObjectNode response = OBJECT_MAPPER.createObjectNode();
+    response.put("jsonrpc", "2.0");
+    response.put("id", 1);
+    ObjectNode result = response.putObject("result");
+    result.put("allCount", 1);
+    result.put("activeCount", 1);
+    result.put("passiveCount", 0);
+    result.put("validCount", 1);
+    ArrayNode peers = result.putArray("peers");
+    ObjectNode peer = peers.addObject();
+    peer.put("remoteAddress", remoteAddress);
+    peer.put("connectSeconds", 125);
+    peer.put("averageLatencyMillis", 35);
+    peer.put("lastKnownBlockNum", 81_234_567);
+    peer.put("needSyncFromPeer", false);
+    peer.put("needSyncFromUs", false);
+    peer.put("syncToFetchSize", 3);
+    peer.put("syncToFetchSizePeekNum", 81_234_560);
+    peer.put("syncBlockRequestedSize", 2);
+    peer.put("remainNum", 7);
+    peer.put("syncChainRequestedMillis", 450);
+    peer.put("inactiveSeconds", 2);
+    peer.put("blockInProcess", 1);
+    return OBJECT_MAPPER.writeValueAsString(response);
+  }
+
+  private static class ExecResult {
+
+    private final int exitCode;
+    private final String request;
+    private final String standardOutput;
+    private final String errorOutput;
+
+    private ExecResult(int exitCode, String request, String standardOutput, String errorOutput) {
+      this.exitCode = exitCode;
+      this.request = request;
+      this.standardOutput = standardOutput;
+      this.errorOutput = errorOutput;
     }
   }
 
