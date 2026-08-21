@@ -70,7 +70,8 @@ public class AdminRpcServlet extends RateLimiterServlet {
     if (CommonParameter.getInstance().isMetricsPrometheusEnable()) {
       rpcServer.setInterceptorList(Collections.singletonList(interceptor));
     }
-    virtualHosts = normalizeVirtualHosts(CommonParameter.getInstance().getAdminVirtualHosts());
+    virtualHosts = normalizeVirtualHosts(
+        CommonParameter.getInstance().getAdminHttpVirtualHosts());
   }
 
   @Override

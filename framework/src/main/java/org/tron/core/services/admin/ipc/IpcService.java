@@ -51,6 +51,11 @@ import org.tron.core.services.admin.AdminJsonRpc;
 import org.tron.core.services.jsonrpc.JsonRpcErrorResolver;
 import org.tron.core.services.jsonrpc.JsonRpcMapper;
 
+/**
+ * Provides the local Admin JSON-RPC endpoint over a Unix domain socket. It accepts and dispatches
+ * client requests, manages concurrent client connections, and owns the socket setup, permissions,
+ * and cleanup lifecycle.
+ */
 @Component
 @Slf4j(topic = "API")
 public class IpcService extends AbstractService {
@@ -342,6 +347,10 @@ public class IpcService extends AbstractService {
     return runCleanup(failure, this::deleteSocketDirectory);
   }
 
+  /**
+   * Runs one cleanup action while retaining the first failure and suppressing later failures, so
+   * the remaining cleanup actions can still be attempted.
+   */
   private Exception runCleanup(Exception failure, CleanupAction action) {
     try {
       action.run();

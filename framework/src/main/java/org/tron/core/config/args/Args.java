@@ -612,13 +612,13 @@ public class Args extends CommonParameter {
     PARAMETER.jsonRpcMaxLogFilterNum = jsonrpc.getMaxLogFilterNum();
     PARAMETER.jsonRpcMaxMessageSize = jsonrpc.getMaxMessageSize();
 
-    // ---- Admin RPC / IPC ----
+    // ---- Admin HTTP / IPC ----
     NodeConfig.AdminIpcConfig adminIpc = nc.getAdmin().getIpc();
-    NodeConfig.AdminRpcConfig adminRpc = nc.getAdmin().getRpc();
-    PARAMETER.adminRpcEnable = adminRpc.isEnable();
-    PARAMETER.adminListenAddress = adminRpc.getListenAddress();
-    PARAMETER.adminListenPort = adminRpc.getPort();
-    PARAMETER.adminVirtualHosts = new ArrayList<>(adminRpc.getVirtualHosts());
+    NodeConfig.AdminHttpConfig adminHttp = nc.getAdmin().getHttp();
+    PARAMETER.adminHttpEnable = adminHttp.isEnable();
+    PARAMETER.adminHttpListenAddress = adminHttp.getListenAddress();
+    PARAMETER.adminHttpListenPort = adminHttp.getPort();
+    PARAMETER.adminHttpVirtualHosts = new ArrayList<>(adminHttp.getVirtualHosts());
     PARAMETER.ipcEnable = adminIpc.isEnable();
     PARAMETER.ipcSocketDirectory = adminIpc.getSocketDirectory();
 

@@ -358,15 +358,15 @@ public class ArgsTest {
   }
 
   @Test
-  public void testAdminRpcAndIpcConfigBinding() {
+  public void testAdminHttpAndIpcConfigBinding() {
     Map<String, Object> override = new HashMap<>();
     override.put("storage.db.directory", "database");
     override.put("node.admin.ipc.enable", "true");
     override.put("node.admin.ipc.socketDirectory", "/tmp/tron-ipc");
-    override.put("node.admin.rpc.enable", "true");
-    override.put("node.admin.rpc.listenAddress", "127.0.0.2");
-    override.put("node.admin.rpc.port", "18575");
-    override.put("node.admin.rpc.virtualHosts",
+    override.put("node.admin.http.enable", "true");
+    override.put("node.admin.http.listenAddress", "127.0.0.2");
+    override.put("node.admin.http.port", "18575");
+    override.put("node.admin.http.virtualHosts",
         Arrays.asList("admin.example.com", "localhost"));
     Config config = ConfigFactory.parseMap(override)
         .withFallback(ConfigFactory.defaultReference());
@@ -375,11 +375,11 @@ public class ArgsTest {
       Args.applyConfigParams(config);
       Assert.assertTrue(Args.getInstance().isIpcEnable());
       Assert.assertEquals("/tmp/tron-ipc", Args.getInstance().getIpcSocketDirectory());
-      Assert.assertTrue(Args.getInstance().isAdminRpcEnable());
-      Assert.assertEquals("127.0.0.2", Args.getInstance().getAdminListenAddress());
-      Assert.assertEquals(18575, Args.getInstance().getAdminListenPort());
+      Assert.assertTrue(Args.getInstance().isAdminHttpEnable());
+      Assert.assertEquals("127.0.0.2", Args.getInstance().getAdminHttpListenAddress());
+      Assert.assertEquals(18575, Args.getInstance().getAdminHttpListenPort());
       Assert.assertEquals(Arrays.asList("admin.example.com", "localhost"),
-          Args.getInstance().getAdminVirtualHosts());
+          Args.getInstance().getAdminHttpVirtualHosts());
     } finally {
       Args.clearParam();
     }
