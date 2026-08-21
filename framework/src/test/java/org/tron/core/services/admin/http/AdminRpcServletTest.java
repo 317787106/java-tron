@@ -20,8 +20,8 @@ import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.mock.web.MockServletConfig;
 import org.tron.core.Constant;
+import org.tron.core.net.service.peermanagement.PeerOperationResult;
 import org.tron.core.services.admin.AdminJsonRpc;
-import org.tron.core.services.admin.PeerOperationResult;
 
 public class AdminRpcServletTest {
 

@@ -2,6 +2,9 @@ package org.tron.core.net.peer;
 
 import static org.mockito.Mockito.mock;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.LinkedList;
@@ -27,6 +30,7 @@ import org.tron.core.net.message.keepalive.PongMessage;
 import org.tron.core.net.service.adv.AdvService;
 import org.tron.core.net.service.sync.SyncService;
 import org.tron.p2p.connection.Channel;
+import org.tron.p2p.utils.NetUtil;
 import org.tron.protos.Protocol;
 
 public class PeerConnectionTest {
@@ -222,6 +226,10 @@ public class PeerConnectionTest {
     peerConnection.setNeedSyncFromUs(false);
     peerConnection.setRemainNum(9L);
     BlockCapsule.BlockId fetchBlock = new BlockCapsule.BlockId(Sha256Hash.ZERO_HASH, 7L);
+    peerConnection.setBlockBothHave(
+        new BlockCapsule.BlockId(Sha256Hash.ZERO_HASH, 11L));
+    ReflectUtils.setFieldValue(peerConnection, "blockBothHaveUpdateTime",
+        System.currentTimeMillis() - 2_000L);
     peerConnection.getSyncBlockToFetch().add(fetchBlock);
     peerConnection.getSyncBlockRequested().put(fetchBlock, System.currentTimeMillis());
     peerConnection.getSyncBlockInProcess().add(fetchBlock);
@@ -231,8 +239,11 @@ public class PeerConnectionTest {
     ActivePeerInfo peerInfo = peerConnection.getActivePeerInfo();
     String log = peerConnection.log();
 
-    Assert.assertEquals(String.valueOf(inetSocketAddress), peerInfo.getRemoteAddress());
+    Assert.assertEquals("127.0.0.2:10001", peerInfo.getRemoteAddress());
+    Assert.assertEquals(inetSocketAddress,
+        NetUtil.parseIpSocketAddress(peerInfo.getRemoteAddress()));
     Assert.assertEquals(42L, peerInfo.getAverageLatencyMillis());
+    Assert.assertEquals(11L, peerInfo.getLastKnownBlockNum());
     Assert.assertFalse(peerInfo.isNeedSyncFromPeer());
     Assert.assertFalse(peerInfo.isNeedSyncFromUs());
     Assert.assertEquals(1, peerInfo.getSyncToFetchSize());
@@ -242,8 +253,52 @@ public class PeerConnectionTest {
     Assert.assertTrue(peerInfo.getSyncChainRequestedMillis() >= 2_000L);
     Assert.assertEquals(1, peerInfo.getBlockInProcess());
     Assert.assertTrue(log.contains("Peer " + peerInfo.getRemoteAddress()));
+    int connectTimeIndex = log.indexOf("connect time/avg latency:");
+    int lastKnownBlockIndex = log.indexOf("last know block num:");
+    Assert.assertTrue(log, connectTimeIndex >= 0);
+    Assert.assertTrue(log, log.contains("[" + peerInfo.getAverageLatencyMillis() + "ms]"));
+    Assert.assertTrue(log, lastKnownBlockIndex > connectTimeIndex);
+    Assert.assertTrue(log.contains("last know block num: 11 ["));
     Assert.assertTrue(log.contains("syncToFetchSizePeekNum:7"));
     Assert.assertTrue(log.contains("remainNum:9"));
+
+    JsonNode serialized = new ObjectMapper().valueToTree(peerInfo);
+    Assert.assertNull(serialized.get("lastKnownBlock"));
+    Assert.assertTrue(serialized.get("lastKnownBlockNum").isIntegralNumber());
+    Assert.assertEquals(11L, serialized.get("lastKnownBlockNum").asLong());
+  }
+
+  @Test
+  public void testFastForwardLastKnownBlockNum() {
+    PeerConnection peerConnection = new PeerConnection();
+    InetSocketAddress inetSocketAddress = new InetSocketAddress("127.0.0.2", 10001);
+    Channel channel = new Channel();
+    ReflectUtils.setFieldValue(channel, "inetSocketAddress", inetSocketAddress);
+    ReflectUtils.setFieldValue(channel, "inetAddress", inetSocketAddress.getAddress());
+    peerConnection.setChannel(channel);
+    peerConnection.setFastForwardBlock(
+        new BlockCapsule.BlockId(Sha256Hash.ZERO_HASH, 12L));
+
+    ActivePeerInfo peerInfo = peerConnection.getActivePeerInfo();
+
+    Assert.assertEquals(12L, peerInfo.getLastKnownBlockNum());
+    Assert.assertTrue(peerConnection.log().contains("last know block num: 12\n"));
+  }
+
+  @Test
+  public void testActivePeerInfoFormatsIpv6Endpoint() throws Exception {
+    PeerConnection peerConnection = new PeerConnection();
+    InetSocketAddress inetSocketAddress = new InetSocketAddress(
+        InetAddress.getByName("2001:db8::20"), 10001);
+    Channel channel = new Channel();
+    ReflectUtils.setFieldValue(channel, "inetSocketAddress", inetSocketAddress);
+    ReflectUtils.setFieldValue(channel, "inetAddress", inetSocketAddress.getAddress());
+    peerConnection.setChannel(channel);
+
+    String remoteAddress = peerConnection.getActivePeerInfo().getRemoteAddress();
+
+    Assert.assertEquals("[2001:db8:0:0:0:0:0:20]:10001", remoteAddress);
+    Assert.assertEquals(inetSocketAddress, NetUtil.parseIpSocketAddress(remoteAddress));
   }
 
   @Test

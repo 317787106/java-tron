@@ -5,6 +5,9 @@ import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 import org.mockito.Mockito;
+import org.tron.core.net.service.peermanagement.ActivePeerListResult;
+import org.tron.core.net.service.peermanagement.PeerManagementService;
+import org.tron.core.net.service.peermanagement.PeerOperationResult;
 
 public class AdminJsonRpcImplTest {
 

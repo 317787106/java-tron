@@ -234,10 +234,16 @@ public class PeerConnection {
   }
 
   public String log() {
-    ActivePeerInfo peerInfo = getActivePeerInfo();
+    long now = System.currentTimeMillis();
+    BlockId currentFastForwardBlock = fastForwardBlock;
+    ActivePeerInfo peerInfo = createActivePeerInfo(now, currentFastForwardBlock);
+    String lastKnownBlock = currentFastForwardBlock != null
+        ? String.valueOf(peerInfo.getLastKnownBlockNum())
+        : String.format("%d [updated %ds ago]", peerInfo.getLastKnownBlockNum(),
+            (now - blockBothHaveUpdateTime) / Constant.ONE_THOUSAND);
     return String.format(
-        "Peer %s\n"
-            + "connect time: %ds [%sms]\n"
+        "Peer /%s\n"
+            + "connect time/avg latency: %ds [%sms]\n"
             + "last know block num: %s\n"
             + "needSyncFromPeer:%b\n"
             + "needSyncFromUs:%b\n"
@@ -251,7 +257,7 @@ public class PeerConnection {
         peerInfo.getRemoteAddress(),
         peerInfo.getConnectSeconds(),
         peerInfo.getAverageLatencyMillis(),
-        peerInfo.getLastKnownBlock(),
+        lastKnownBlock,
         peerInfo.isNeedSyncFromPeer(),
         peerInfo.isNeedSyncFromUs(),
         peerInfo.getSyncToFetchSize(),
@@ -264,18 +270,19 @@ public class PeerConnection {
   }
 
   public ActivePeerInfo getActivePeerInfo() {
-    long now = System.currentTimeMillis();
+    return createActivePeerInfo(System.currentTimeMillis(), fastForwardBlock);
+  }
+
+  private ActivePeerInfo createActivePeerInfo(long now, BlockId currentFastForwardBlock) {
     BlockId syncBlockId = syncBlockToFetch.peek();
     Pair<Deque<BlockId>, Long> requested = syncChainRequested;
-    String lastKnownBlock = fastForwardBlock != null
-        ? String.valueOf(fastForwardBlock.getNum())
-        : String.format("%d [%ds]", blockBothHave.getNum(),
-            (now - blockBothHaveUpdateTime) / Constant.ONE_THOUSAND);
+    long lastKnownBlockNum = currentFastForwardBlock != null
+        ? currentFastForwardBlock.getNum() : blockBothHave.getNum();
     return new ActivePeerInfo(
-        String.valueOf(channel.getInetSocketAddress()),
+        formatEndpoint(channel.getInetSocketAddress()),
         (now - channel.getStartTime()) / Constant.ONE_THOUSAND,
         channel.getAvgLatency(),
-        lastKnownBlock,
+        lastKnownBlockNum,
         isNeedSyncFromPeer(),
         isNeedSyncFromUs(),
         syncBlockToFetch.size(),
@@ -285,6 +292,14 @@ public class PeerConnection {
         requested == null ? 0 : now - requested.getValue(),
         (now - lastInteractiveTime) / Constant.ONE_THOUSAND,
         syncBlockInProcess.size());
+  }
+
+  private static String formatEndpoint(InetSocketAddress address) {
+    String host = address.getAddress().getHostAddress();
+    if (host.indexOf(':') >= 0) {
+      return "[" + host + "]:" + address.getPort();
+    }
+    return host + ":" + address.getPort();
   }
 
   public boolean isSyncFinish() {

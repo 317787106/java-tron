@@ -19,10 +19,10 @@ import org.tron.core.net.service.effective.EffectiveCheckService;
 import org.tron.core.net.service.effective.ResilienceService;
 import org.tron.core.net.service.fetchblock.FetchBlockService;
 import org.tron.core.net.service.nodepersist.NodePersistService;
+import org.tron.core.net.service.peermanagement.PeerManagementService;
 import org.tron.core.net.service.relay.RelayService;
 import org.tron.core.net.service.statistics.TronStatsManager;
 import org.tron.core.net.service.sync.SyncService;
-import org.tron.core.services.admin.PeerManagementService;
 import org.tron.p2p.P2pConfig;
 import org.tron.p2p.P2pService;
 
@@ -36,7 +36,8 @@ public class TronNetServicePeerManagementTest {
 
       InOrder startOrder = Mockito.inOrder(context.peerManagementService, context.p2pService,
           context.effectiveCheckService);
-      startOrder.verify(context.peerManagementService).configure(context.p2pConfig);
+      startOrder.verify(context.peerManagementService)
+          .configure(context.p2pConfig, context.p2pService);
       startOrder.verify(context.p2pService).start(context.p2pConfig);
       startOrder.verify(context.p2pService).register(Mockito.any(P2pEventHandlerImpl.class));
       startOrder.verify(context.effectiveCheckService).init();
@@ -69,7 +70,8 @@ public class TronNetServicePeerManagementTest {
       context.restoreStatics();
     }
 
-    Mockito.verify(context.peerManagementService).configure(context.p2pConfig);
+    Mockito.verify(context.peerManagementService)
+        .configure(context.p2pConfig, context.p2pService);
     Mockito.verify(context.peerManagementService, Mockito.never()).close();
     Mockito.verify(context.peerManagementService, Mockito.never()).init();
   }

@@ -5,6 +5,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.tron.core.exception.jsonrpc.JsonRpcInternalException;
 import org.tron.core.exception.jsonrpc.JsonRpcInvalidParamsException;
+import org.tron.core.net.service.peermanagement.ActivePeerListResult;
+import org.tron.core.net.service.peermanagement.PeerManagementService;
+import org.tron.core.net.service.peermanagement.PeerOperationResult;
 
 @Component
 public class AdminJsonRpcImpl implements AdminJsonRpc {
@@ -12,7 +15,7 @@ public class AdminJsonRpcImpl implements AdminJsonRpc {
   private final PeerManagementService peerManagementService;
 
   @Autowired
-  public AdminJsonRpcImpl(PeerManagementService peerManagementService) {
+  public AdminJsonRpcImpl(@Autowired PeerManagementService peerManagementService) {
     this.peerManagementService = peerManagementService;
   }
 

@@ -26,10 +26,10 @@ import org.tron.core.net.service.effective.EffectiveCheckService;
 import org.tron.core.net.service.effective.ResilienceService;
 import org.tron.core.net.service.fetchblock.FetchBlockService;
 import org.tron.core.net.service.nodepersist.NodePersistService;
+import org.tron.core.net.service.peermanagement.PeerManagementService;
 import org.tron.core.net.service.relay.RelayService;
 import org.tron.core.net.service.statistics.TronStatsManager;
 import org.tron.core.net.service.sync.SyncService;
-import org.tron.core.services.admin.PeerManagementService;
 import org.tron.p2p.P2pConfig;
 import org.tron.p2p.P2pService;
 import org.tron.p2p.utils.NetUtil;
@@ -92,7 +92,7 @@ public class TronNetService {
     try {
       init = true;
       P2pConfig config = getConfig();
-      peerManagementService.configure(config);
+      peerManagementService.configure(config, p2pService);
       setP2pConfig(config);
       p2pService.start(p2pConfig);
       p2pService.register(p2pEventHandler);

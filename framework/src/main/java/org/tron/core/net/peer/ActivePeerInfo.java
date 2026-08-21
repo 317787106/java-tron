@@ -12,7 +12,7 @@ public class ActivePeerInfo {
   private final String remoteAddress;
   private final long connectSeconds;
   private final long averageLatencyMillis;
-  private final String lastKnownBlock;
+  private final long lastKnownBlockNum;
   private final boolean needSyncFromPeer;
   private final boolean needSyncFromUs;
   private final int syncToFetchSize;
@@ -24,13 +24,13 @@ public class ActivePeerInfo {
   private final int blockInProcess;
 
   ActivePeerInfo(String remoteAddress, long connectSeconds, long averageLatencyMillis,
-      String lastKnownBlock, boolean needSyncFromPeer, boolean needSyncFromUs,
+      long lastKnownBlockNum, boolean needSyncFromPeer, boolean needSyncFromUs,
       int syncToFetchSize, long syncToFetchSizePeekNum, int syncBlockRequestedSize,
       long remainNum, long syncChainRequestedMillis, long inactiveSeconds, int blockInProcess) {
     this.remoteAddress = remoteAddress;
     this.connectSeconds = connectSeconds;
     this.averageLatencyMillis = averageLatencyMillis;
-    this.lastKnownBlock = lastKnownBlock;
+    this.lastKnownBlockNum = lastKnownBlockNum;
     this.needSyncFromPeer = needSyncFromPeer;
     this.needSyncFromUs = needSyncFromUs;
     this.syncToFetchSize = syncToFetchSize;

@@ -1,4 +1,4 @@
-package org.tron.core.services.admin;
+package org.tron.core.net.service.peermanagement;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -24,7 +24,6 @@ import org.tron.core.config.args.Args;
 import org.tron.core.db.CommonStore;
 import org.tron.core.exception.jsonrpc.JsonRpcInternalException;
 import org.tron.core.exception.jsonrpc.JsonRpcInvalidParamsException;
-import org.tron.core.net.TronNetService;
 import org.tron.core.net.peer.ActivePeerInfo;
 import org.tron.core.net.peer.PeerConnection;
 import org.tron.core.net.peer.PeerManager;
@@ -52,14 +51,18 @@ public class PeerManagementService {
 
   private final Object managementLock = new Object();
   private volatile List<InetAddress> blockedIps = Collections.emptyList();
+  private volatile P2pService p2pService;
   private volatile boolean ready;
 
-  public void configure(P2pConfig p2pConfig) {
+  public void configure(P2pConfig p2pConfig, P2pService p2pService) {
     ready = false;
+    this.p2pService = null;
     Objects.requireNonNull(p2pConfig, "p2pConfig must not be null");
+    Objects.requireNonNull(p2pService, "p2pService must not be null");
     List<InetAddress> loadedBlockedIps = loadBlockedIps();
     blockedIps = immutableCopy(loadedBlockedIps);
     p2pConfig.setBlockedIps(new HashSet<>(loadedBlockedIps));
+    this.p2pService = p2pService;
   }
 
   public void init() {
@@ -68,6 +71,7 @@ public class PeerManagementService {
 
   public void close() {
     ready = false;
+    p2pService = null;
   }
 
   /**
@@ -123,7 +127,7 @@ public class PeerManagementService {
       } catch (IllegalArgumentException e) {
         throw new JsonRpcInvalidParamsException("Invalid peer endpoint", e);
       } catch (RuntimeException e) {
-        logger.error("Failed to add active node ({})", e.getClass().getSimpleName());
+        logger.error("Failed to add active node", e);
         throw new JsonRpcInternalException("Failed to add active node", e);
       }
     }
@@ -149,7 +153,7 @@ public class PeerManagementService {
       } catch (IllegalArgumentException e) {
         throw new JsonRpcInvalidParamsException("Invalid peer endpoint", e);
       } catch (RuntimeException e) {
-        logger.error("Failed to remove active node ({})", e.getClass().getSimpleName());
+        logger.error("Failed to remove active node", e);
         throw new JsonRpcInternalException("Failed to remove active node", e);
       }
     }
@@ -170,7 +174,7 @@ public class PeerManagementService {
     } catch (IllegalArgumentException e) {
       throw new JsonRpcInvalidParamsException("Invalid peer endpoint", e);
     } catch (RuntimeException e) {
-      logger.error("Failed to disconnect peer ({})", e.getClass().getSimpleName());
+      logger.error("Failed to disconnect peer", e);
       throw new JsonRpcInternalException("Failed to disconnect peer", e);
     }
   }
@@ -223,8 +227,7 @@ public class PeerManagementService {
     try {
       return deserializeBlockedIps(storedValue);
     } catch (IOException e) {
-      logger.warn("Invalid blocked IP data in CommonStore key blocked-ips; deleting it ({})",
-          e.getClass().getSimpleName());
+      logger.warn("Invalid blocked IP data in CommonStore key blocked-ips; deleting it", e);
       deleteInvalidBlockedIps();
       return Collections.emptyList();
     }
@@ -234,22 +237,21 @@ public class PeerManagementService {
     try {
       commonStore.delete(DB_KEY_BLOCKED_IPS);
     } catch (RuntimeException e) {
-      logger.warn("Failed to delete invalid CommonStore key blocked-ips ({})",
-          e.getClass().getSimpleName());
+      logger.warn("Failed to delete invalid CommonStore key blocked-ips", e);
     }
   }
 
   private PeerOperationResult replaceBlockedIps(List<InetAddress> nextBlockedIps,
       InetAddress changedAddress, boolean blocked, P2pService p2pService)
       throws JsonRpcInternalException {
-    saveBlockedIps(nextBlockedIps);
     int disconnectedCount;
     try {
       disconnectedCount = p2pService.replaceBlockedIps(new HashSet<>(nextBlockedIps));
     } catch (RuntimeException e) {
-      logger.error("Failed to apply blocked IP snapshot ({})", e.getClass().getSimpleName());
+      logger.error("Failed to apply blocked IP snapshot", e);
       throw new JsonRpcInternalException("Failed to apply blocked IP snapshot", e);
     }
+    saveBlockedIps(nextBlockedIps);
     blockedIps = immutableCopy(nextBlockedIps);
     logger.info("Admin {} IP {}, disconnected channels {}",
         blocked ? "blocked" : "unblocked", changedAddress.getHostAddress(), disconnectedCount);
@@ -264,21 +266,17 @@ public class PeerManagementService {
       byte[] serialized = OBJECT_MAPPER.writeValueAsBytes(serializedAddresses);
       commonStore.put(DB_KEY_BLOCKED_IPS, new BytesCapsule(serialized));
     } catch (RuntimeException | IOException e) {
-      logger.error("Failed to save CommonStore key blocked-ips ({})",
-          e.getClass().getSimpleName());
+      logger.error("Failed to save CommonStore key blocked-ips", e);
       throw new JsonRpcInternalException("Failed to persist blocked IP snapshot", e);
     }
   }
 
   private P2pService requireP2pService() throws JsonRpcInternalException {
-    if (!ready) {
+    P2pService service = p2pService;
+    if (!ready || service == null) {
       throw new JsonRpcInternalException("P2P service is not ready");
     }
-    P2pService p2pService = TronNetService.getP2pService();
-    if (p2pService == null) {
-      throw new JsonRpcInternalException("P2P service is not ready");
-    }
-    return p2pService;
+    return service;
   }
 
   private InetAddress parseIp(String ip) throws JsonRpcInvalidParamsException {
@@ -296,7 +294,7 @@ public class PeerManagementService {
           "Endpoint must use IPv4:port or [IPv6]:port format");
     }
     try {
-      return NetUtil.parseInetSocketAddress(endpoint);
+      return NetUtil.parseIpSocketAddress(endpoint);
     } catch (IllegalArgumentException e) {
       throw new JsonRpcInvalidParamsException("Invalid peer endpoint", e);
     }

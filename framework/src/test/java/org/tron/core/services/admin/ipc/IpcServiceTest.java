@@ -44,10 +44,10 @@ import org.tron.core.config.args.Args;
 import org.tron.core.exception.TronError;
 import org.tron.core.exception.jsonrpc.JsonRpcInternalException;
 import org.tron.core.exception.jsonrpc.JsonRpcInvalidParamsException;
+import org.tron.core.net.service.peermanagement.PeerManagementService;
+import org.tron.core.net.service.peermanagement.PeerOperationResult;
 import org.tron.core.services.admin.AdminJsonRpc;
 import org.tron.core.services.admin.AdminJsonRpcImpl;
-import org.tron.core.services.admin.PeerManagementService;
-import org.tron.core.services.admin.PeerOperationResult;
 
 public class IpcServiceTest {
 
