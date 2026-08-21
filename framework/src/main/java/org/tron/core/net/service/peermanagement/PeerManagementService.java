@@ -85,6 +85,8 @@ public class PeerManagementService {
 
   /**
    * Returns current peer connections with the same core statistics used by peer logging.
+   * Unlike {@code logPeerStats()}, this method excludes peers waiting for delayed disconnect
+   * cleanup and derives all counts from the same filtered snapshot.
    */
   public ActivePeerListResult listActivePeers() {
     List<PeerConnection> peers = PeerManager.getPeers();
@@ -219,11 +221,10 @@ public class PeerManagementService {
   }
 
   private List<InetAddress> loadBlockedIps() {
-    if (!commonStore.has(DB_KEY_BLOCKED_IPS)) {
+    byte[] storedValue = commonStore.get(DB_KEY_BLOCKED_IPS).getData();
+    if (storedValue == null) {
       return Collections.emptyList();
     }
-    BytesCapsule capsule = commonStore.get(DB_KEY_BLOCKED_IPS);
-    byte[] storedValue = capsule == null ? null : capsule.getData();
     try {
       return deserializeBlockedIps(storedValue);
     } catch (IOException e) {

@@ -57,6 +57,8 @@ public class PeerManagementServiceTest {
     Field commonStoreField = PeerManagementService.class.getDeclaredField("commonStore");
     commonStoreField.setAccessible(true);
     commonStoreField.set(service, commonStore);
+    Mockito.when(commonStore.get(AdditionalMatchers.aryEq(DB_KEY_BLOCKED_IPS)))
+        .thenReturn(new BytesCapsule(null));
   }
 
   @After
@@ -67,14 +69,13 @@ public class PeerManagementServiceTest {
   @Test
   public void configureUsesEmptyBlockedIpsWhenKeyDoesNotExist() {
     P2pConfig config = new P2pConfig();
-    Mockito.when(commonStore.has(AdditionalMatchers.aryEq(
-        DB_KEY_BLOCKED_IPS))).thenReturn(false);
 
     service.configure(config, p2pService);
 
     Assert.assertEquals(Collections.emptyList(), service.listBlockedIps());
     Assert.assertEquals(Collections.emptySet(), config.getBlockedIps());
-    Mockito.verify(commonStore, Mockito.never()).get(Mockito.any(byte[].class));
+    Mockito.verify(commonStore).get(AdditionalMatchers.aryEq(DB_KEY_BLOCKED_IPS));
+    Mockito.verify(commonStore, Mockito.never()).has(Mockito.any(byte[].class));
   }
 
   @Test
@@ -94,8 +95,6 @@ public class PeerManagementServiceTest {
     P2pConfig config = new P2pConfig();
     byte[] storedValue = ("[\"2001:db8::2\",\"192.0.2.2\",\"192.0.2.2\"]")
         .getBytes(StandardCharsets.UTF_8);
-    Mockito.when(commonStore.has(AdditionalMatchers.aryEq(
-        DB_KEY_BLOCKED_IPS))).thenReturn(true);
     Mockito.when(commonStore.get(AdditionalMatchers.aryEq(
         DB_KEY_BLOCKED_IPS)))
         .thenReturn(new BytesCapsule(storedValue));
@@ -112,8 +111,6 @@ public class PeerManagementServiceTest {
   @Test
   public void configureDeletesInvalidBlockedIpsAndContinuesWithEmptySnapshot() {
     P2pConfig config = new P2pConfig();
-    Mockito.when(commonStore.has(AdditionalMatchers.aryEq(
-        DB_KEY_BLOCKED_IPS))).thenReturn(true);
     Mockito.when(commonStore.get(AdditionalMatchers.aryEq(
         DB_KEY_BLOCKED_IPS)))
         .thenReturn(new BytesCapsule("not-json".getBytes(StandardCharsets.UTF_8)));
@@ -129,8 +126,6 @@ public class PeerManagementServiceTest {
   @Test
   public void configureContinuesWhenInvalidBlockedIpsCannotBeDeleted() {
     P2pConfig config = new P2pConfig();
-    Mockito.when(commonStore.has(AdditionalMatchers.aryEq(
-        DB_KEY_BLOCKED_IPS))).thenReturn(true);
     Mockito.when(commonStore.get(AdditionalMatchers.aryEq(
         DB_KEY_BLOCKED_IPS)))
         .thenReturn(new BytesCapsule("[null]".getBytes(StandardCharsets.UTF_8)));
@@ -146,8 +141,6 @@ public class PeerManagementServiceTest {
   @Test
   public void configurePropagatesDatabaseReadFailureWithoutDeletingKey() {
     P2pConfig config = new P2pConfig();
-    Mockito.when(commonStore.has(AdditionalMatchers.aryEq(DB_KEY_BLOCKED_IPS)))
-        .thenReturn(true);
     Mockito.when(commonStore.get(AdditionalMatchers.aryEq(DB_KEY_BLOCKED_IPS)))
         .thenThrow(new IllegalStateException("database unavailable"));
 
@@ -165,8 +158,6 @@ public class PeerManagementServiceTest {
   public void configureFailureResetsReadyState() throws Exception {
     service.configure(new P2pConfig(), p2pService);
     service.init();
-    Mockito.when(commonStore.has(AdditionalMatchers.aryEq(DB_KEY_BLOCKED_IPS)))
-        .thenReturn(true);
     Mockito.when(commonStore.get(AdditionalMatchers.aryEq(DB_KEY_BLOCKED_IPS)))
         .thenThrow(new IllegalStateException("database unavailable"));
 
@@ -521,8 +512,6 @@ public class PeerManagementServiceTest {
   }
 
   private void stubStoredBlockedIps(String value) {
-    Mockito.when(commonStore.has(AdditionalMatchers.aryEq(
-        DB_KEY_BLOCKED_IPS))).thenReturn(true);
     Mockito.when(commonStore.get(AdditionalMatchers.aryEq(
         DB_KEY_BLOCKED_IPS)))
         .thenReturn(new BytesCapsule(value.getBytes(StandardCharsets.UTF_8)));

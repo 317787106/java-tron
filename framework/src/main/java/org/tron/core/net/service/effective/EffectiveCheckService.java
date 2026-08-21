@@ -22,6 +22,7 @@ import org.tron.core.config.args.Args;
 import org.tron.core.net.TronNetDelegate;
 import org.tron.core.net.TronNetService;
 import org.tron.core.net.peer.PeerConnection;
+import org.tron.p2p.connection.ConnectionPolicy;
 import org.tron.p2p.discover.Node;
 import org.tron.protos.Protocol.ReasonCode;
 
@@ -107,6 +108,7 @@ public class EffectiveCheckService {
     Set<InetSocketAddress> usedAddressSet = new HashSet<>();
     tronNetDelegate.getActivePeer().forEach(p -> usedAddressSet.add(p.getInetSocketAddress()));
     Optional<Node> chosenNode = tableNodes.stream()
+        .filter(node -> !ConnectionPolicy.isBlocked(node.getPreferInetSocketAddress()))
         .filter(node -> nodesCache.getIfPresent(node.getPreferInetSocketAddress()) == null)
         .filter(node -> !usedAddressSet.contains(node.getPreferInetSocketAddress()))
         .filter(node -> !TronNetService.getP2pConfig().getActiveNodes()
@@ -117,12 +119,13 @@ public class EffectiveCheckService {
       return;
     }
 
-    count.incrementAndGet();
     nodesCache.put(chosenNode.get().getPreferInetSocketAddress(), true);
     cur = new InetSocketAddress(chosenNode.get().getPreferInetSocketAddress().getAddress(),
         chosenNode.get().getPreferInetSocketAddress().getPort());
 
-    logger.info("Try to get effective connection by using {} at seq {}", cur, count.get());
+    InetSocketAddress candidateAddress = cur;
+    logger.info("Try to get effective connection by using {} at seq {}", candidateAddress,
+        count.incrementAndGet());
     ChannelFuture channelFuture = TronNetService.getP2pService()
         .connect(chosenNode.get(), future -> {
           if (future.isCancelled()) {
@@ -141,8 +144,10 @@ public class EffectiveCheckService {
           }
         });
     if (channelFuture == null) {
-      logger.warn("Connection to chosen peer {} was not scheduled", cur);
+      // chosenNode maybe rejected when it is blocked
+      logger.warn("Connection to chosen peer {} was not scheduled", candidateAddress);
       cur = null;
+      triggerNext();
     }
   }
 
