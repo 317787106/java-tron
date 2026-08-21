@@ -64,6 +64,7 @@ public class IpcService extends AbstractService {
   private static final String ACCEPTOR_EXECUTOR_NAME = "admin-ipc-acceptor";
   private static final String CLIENT_EXECUTOR_NAME = "admin-ipc-client";
   private static final int CLIENT_IDLE_TIMEOUT_MILLIS = 10 * 60 * 1000;
+  private static final int EXECUTOR_SHUTDOWN_TIMEOUT_SECONDS = 1;
   private static final String IPC_DIRECTORY_NAME = ".ipc";
 
   // macOS/Linux sun_path buffers are 104/108 bytes. Reserve one byte for the terminating null
@@ -317,14 +318,24 @@ public class IpcService extends AbstractService {
   }
 
   private void shutdownExecutors() {
-    // The accept and client workers can be blocked in native socket reads. Closing a junixsocket
-    // from another thread does not always wake those reads promptly, while the shared shutdown
-    // helper waits 60 seconds before interrupting them. Interrupt first so IPC shutdown remains
-    // bounded instead of intermittently stalling until that fallback timeout.
+    // Closing a junixsocket from another thread does not always wake a native read promptly. The
+    // workers are daemon threads, so interrupt them and use a short bounded wait instead of the
+    // shared executor shutdown helper's 60-second wait.
     acceptorExecutor.shutdownNow();
     clientExecutor.shutdownNow();
-    ExecutorServiceManager.shutdownAndAwaitTermination(acceptorExecutor, ACCEPTOR_EXECUTOR_NAME);
-    ExecutorServiceManager.shutdownAndAwaitTermination(clientExecutor, CLIENT_EXECUTOR_NAME);
+    awaitExecutorTermination(acceptorExecutor, ACCEPTOR_EXECUTOR_NAME);
+    awaitExecutorTermination(clientExecutor, CLIENT_EXECUTOR_NAME);
+  }
+
+  private void awaitExecutorTermination(ExecutorService executor, String name) {
+    try {
+      if (!executor.awaitTermination(EXECUTOR_SHUTDOWN_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+        logger.warn("Pool {} did not terminate within {} second", name,
+            EXECUTOR_SHUTDOWN_TIMEOUT_SECONDS);
+      }
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+    }
   }
 
   private void deleteSocketFile() throws IOException {
