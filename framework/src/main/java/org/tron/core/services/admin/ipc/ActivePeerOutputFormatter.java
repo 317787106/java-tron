@@ -10,11 +10,17 @@ final class ActivePeerOutputFormatter {
 
   private static final int MAX_TABLE_CELL_LENGTH = 64;
   private static final String METHOD = "admin_listActivePeers";
-  private static final String[] TABLE_FIELDS = {
-      "remoteAddress", "connectSeconds", "averageLatencyMillis", "lastKnownBlockNum",
-      "needSyncFromPeer", "needSyncFromUs", "syncToFetchSize", "syncToFetchSizePeekNum",
-      "syncBlockRequestedSize", "remainNum", "syncChainRequestedMillis", "inactiveSeconds",
-      "blockInProcess"
+  private static final String[] FIELD_MAPPINGS = {
+      "Address = remoteAddress",
+      "Conn = connectSeconds; Latency = averageLatencyMillis; Block = lastKnownBlockNum",
+      "Sync P/U = needSyncFromPeer / needSyncFromUs (Y/N)",
+      "Fetch Size/Head = syncToFetchSize / syncToFetchSizePeekNum",
+      "Req/Remain = syncBlockRequestedSize / remainNum",
+      "Chain = syncChainRequestedMillis; Idle = inactiveSeconds; Proc = blockInProcess"
+  };
+  private static final String[] TABLE_HEADERS = {
+      "Address", "Conn", "Latency", "Block", "Sync P/U", "Fetch Size/Head", "Req/Remain",
+      "Chain", "Idle", "Proc"
   };
 
   ActivePeerOutputFormatter() {
@@ -52,16 +58,12 @@ final class ActivePeerOutputFormatter {
       if (!peer.isObject()) {
         return null;
       }
-      List<String> row = new ArrayList<>();
-      for (String field : TABLE_FIELDS) {
-        row.add(formatTableCell(peer.get(field)));
-      }
-      rows.add(row);
+      rows.add(createTableRow(peer));
     }
 
-    int[] widths = new int[TABLE_FIELDS.length];
-    for (int i = 0; i < TABLE_FIELDS.length; i++) {
-      widths[i] = TABLE_FIELDS[i].length();
+    int[] widths = new int[TABLE_HEADERS.length];
+    for (int i = 0; i < TABLE_HEADERS.length; i++) {
+      widths[i] = TABLE_HEADERS[i].length();
       for (List<String> row : rows) {
         widths[i] = Math.max(widths[i], row.get(i).length());
       }
@@ -74,7 +76,13 @@ final class ActivePeerOutputFormatter {
         .append(", passive=").append(formatTableCell(result.get("passiveCount")))
         .append(", valid=").append(formatTableCell(result.get("validCount")))
         .append(lineSeparator).append(lineSeparator);
-    appendTableRow(table, Arrays.asList(TABLE_FIELDS), widths);
+    table.append("Fields:").append(lineSeparator);
+    for (String mapping : FIELD_MAPPINGS) {
+      table.append("  ").append(mapping).append(lineSeparator);
+    }
+    table.append("Units: Conn/Idle=s, Latency/Chain=ms")
+        .append(lineSeparator).append(lineSeparator);
+    appendTableRow(table, Arrays.asList(TABLE_HEADERS), widths);
     table.append(lineSeparator);
     appendTableSeparator(table, widths);
     for (List<String> row : rows) {
@@ -84,11 +92,43 @@ final class ActivePeerOutputFormatter {
     return table.toString();
   }
 
+  private List<String> createTableRow(JsonNode peer) {
+    return Arrays.asList(
+        formatTableCell(peer.get("remoteAddress")),
+        formatTableCell(peer.get("connectSeconds")),
+        formatTableCell(peer.get("averageLatencyMillis")),
+        formatTableCell(peer.get("lastKnownBlockNum")),
+        formatBooleanPair(peer.get("needSyncFromPeer"), peer.get("needSyncFromUs")),
+        formatPair(peer.get("syncToFetchSize"), peer.get("syncToFetchSizePeekNum")),
+        formatPair(peer.get("syncBlockRequestedSize"), peer.get("remainNum")),
+        formatTableCell(peer.get("syncChainRequestedMillis")),
+        formatTableCell(peer.get("inactiveSeconds")),
+        formatTableCell(peer.get("blockInProcess")));
+  }
+
+  private String formatBooleanPair(JsonNode fromPeer, JsonNode fromUs) {
+    return formatBooleanCell(fromPeer) + "/" + formatBooleanCell(fromUs);
+  }
+
+  private String formatBooleanCell(JsonNode value) {
+    if (value == null || !value.isBoolean()) {
+      return "-";
+    }
+    return value.asBoolean() ? "Y" : "N";
+  }
+
+  private String formatPair(JsonNode first, JsonNode second) {
+    return sanitizeTableCell(formatTableCell(first) + "/" + formatTableCell(second));
+  }
+
   private String formatTableCell(JsonNode value) {
     if (value == null || value.isNull()) {
       return "-";
     }
-    String text = value.asText();
+    return sanitizeTableCell(value.asText());
+  }
+
+  private String sanitizeTableCell(String text) {
     StringBuilder sanitized = new StringBuilder(Math.min(text.length(), MAX_TABLE_CELL_LENGTH));
     for (int i = 0; i < text.length() && sanitized.length() < MAX_TABLE_CELL_LENGTH; i++) {
       char character = text.charAt(i);

@@ -180,6 +180,23 @@ public class IpcClientTest {
     }
     Assert.assertTrue(execution.standardOutput,
         execution.standardOutput.contains("192.0.2.20:18888"));
+    Assert.assertTrue(execution.standardOutput,
+        execution.standardOutput.contains("Units: Conn/Idle=s, Latency/Chain=ms"));
+    Assert.assertTrue(execution.standardOutput,
+        execution.standardOutput.contains(
+            "Address          | Conn | Latency | Block    | Sync P/U | Fetch Size/Head | "
+                + "Req/Remain | Chain | Idle | Proc"));
+    Assert.assertTrue(execution.standardOutput,
+        execution.standardOutput.contains(
+            "192.0.2.20:18888 | 125  | 35      | 81234567 | N/N      | 3/81234560      | "
+                + "2/7        | 450   | 2    | 1"));
+    Assert.assertTrue(execution.standardOutput,
+        execution.standardOutput.indexOf("Fields:")
+            < execution.standardOutput.indexOf("Address          | Conn"));
+    for (String line : execution.standardOutput.split("\\r?\\n", -1)) {
+      Assert.assertTrue("Expected text output line to fit within 120 characters: " + line,
+          line.length() <= 120);
+    }
     Assert.assertFalse(execution.standardOutput,
         execution.standardOutput.contains("\"remoteAddress\""));
     Assert.assertEquals("", execution.errorOutput);
