@@ -25,6 +25,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.apache.commons.lang3.StringUtils;
 import org.jline.reader.Completer;
@@ -61,6 +63,10 @@ public class IpcClient {
 
   private final String socketFilePath;
   private final Map<String, AdminCommand> adminCommands;
+  private final ActivePeerOutputFormatter activePeerOutputFormatter =
+      new ActivePeerOutputFormatter();
+  private final ConcurrentMap<Integer, ActivePeerOutputFormatter.OutputFormat>
+      pendingOutputFormats = new ConcurrentHashMap<>();
   private final DefaultParser commandParser = new DefaultParser().eofOnUnclosedQuote(true);
   private int requestId = 0;
 
@@ -144,6 +150,9 @@ public class IpcClient {
   }
 
   private String formatUsage(AdminCommand command) {
+    if (activePeerOutputFormatter.supports(command.name)) {
+      return activePeerOutputFormatter.usage();
+    }
     if (command.parameterNames.isEmpty()) {
       return command.name;
     }
@@ -239,6 +248,8 @@ public class IpcClient {
       }
       System.err.println(parsedResponse.formatted);
       return EXIT_FAILURE;
+    } finally {
+      pendingOutputFormats.clear();
     }
   }
 
@@ -249,6 +260,7 @@ public class IpcClient {
       inputRequest(socket, reader, connected);
     } finally {
       connected.set(false);
+      pendingOutputFormats.clear();
     }
   }
 
@@ -402,16 +414,29 @@ public class IpcClient {
       printHelp();
       return null;
     }
-    if (commandWords.size() - 1 != adminCommand.parameterNames.size()) {
+    ActivePeerOutputFormatter.OutputFormat outputFormat =
+        ActivePeerOutputFormatter.OutputFormat.JSON;
+    List<String> rawValues;
+    if (activePeerOutputFormatter.supports(adminCommand.name)) {
+      if (commandWords.size() > 2) {
+        System.err.println("Invalid parameter, usage: "
+            + formatUsage(adminCommand));
+        return null;
+      }
+      if (commandWords.size() == 2) {
+        outputFormat = activePeerOutputFormatter.parseFormat(commandWords.get(1));
+      }
+      rawValues = Collections.emptyList();
+    } else if (commandWords.size() - 1 != adminCommand.parameterNames.size()) {
       System.err.println("Invalid parameter, usage: "
           + formatUsage(adminCommand));
       return null;
+    } else {
+      rawValues = new ArrayList<>(commandWords.subList(1, commandWords.size()));
     }
 
-    List<String> rawValues = new ArrayList<>(
-        commandWords.subList(1, commandWords.size()));
     List<Object> values = convertArguments(adminCommand, rawValues);
-    return buildJsonWithParameter(adminCommand.name, values);
+    return buildJsonWithParameter(adminCommand.name, values, outputFormat);
   }
 
   private List<Object> convertArguments(AdminCommand command, List<String> values) {
@@ -489,6 +514,7 @@ public class IpcClient {
       if (root == null || root.isMissingNode()) {
         return new ParsedResponse(response, false);
       }
+      ActivePeerOutputFormatter.OutputFormat outputFormat = takeOutputFormat(root);
       JsonNode error = root.get("error");
       if (error != null && !error.isNull()) {
         String code = error.has("code") ? " " + error.get("code").asText() : "";
@@ -496,12 +522,34 @@ public class IpcClient {
         return new ParsedResponse("Error" + code + ": " + message, false);
       }
       if (root.has("result")) {
-        return new ParsedResponse(formatJsonValue(root.get("result")), true);
+        return new ParsedResponse(formatResult(root.get("result"), outputFormat), true);
       }
       return new ParsedResponse(formatJsonValue(root), false);
     } catch (JsonProcessingException e) {
       return new ParsedResponse(response, false);
     }
+  }
+
+  private ActivePeerOutputFormatter.OutputFormat takeOutputFormat(JsonNode response) {
+    JsonNode responseId = response.get("id");
+    if (responseId == null || !responseId.isIntegralNumber()) {
+      return ActivePeerOutputFormatter.OutputFormat.JSON;
+    }
+    ActivePeerOutputFormatter.OutputFormat outputFormat =
+        pendingOutputFormats.remove(responseId.asInt());
+    return outputFormat == null ? ActivePeerOutputFormatter.OutputFormat.JSON : outputFormat;
+  }
+
+  private String formatResult(JsonNode value,
+      ActivePeerOutputFormatter.OutputFormat outputFormat)
+      throws JsonProcessingException {
+    if (ActivePeerOutputFormatter.OutputFormat.TEXT.equals(outputFormat)) {
+      String table = activePeerOutputFormatter.formatText(value);
+      if (table != null) {
+        return table;
+      }
+    }
+    return formatJsonValue(value);
   }
 
   private String formatJsonValue(JsonNode value) throws JsonProcessingException {
@@ -514,14 +562,20 @@ public class IpcClient {
     return OBJECT_MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(value);
   }
 
-  private String buildJsonWithParameter(String cmd, List<Object> values)
+  private String buildJsonWithParameter(String cmd, List<Object> values,
+      ActivePeerOutputFormatter.OutputFormat outputFormat)
       throws JsonProcessingException {
     Map<String, Object> params = new LinkedHashMap<>();
+    int currentRequestId = ++requestId;
     params.put("jsonrpc", "2.0");
     params.put("method", cmd);
     params.put("params", values);
-    params.put("id", ++requestId);
-    return OBJECT_MAPPER.writeValueAsString(params);
+    params.put("id", currentRequestId);
+    String request = OBJECT_MAPPER.writeValueAsString(params);
+    if (!ActivePeerOutputFormatter.OutputFormat.JSON.equals(outputFormat)) {
+      pendingOutputFormats.put(currentRequestId, outputFormat);
+    }
+    return request;
   }
 
   private static class ParsedResponse {
