@@ -104,6 +104,12 @@ public class Args extends CommonParameter {
   @Getter
   private static String configFilePath = "";
 
+  @Getter
+  private static String ipcSocketFile;
+
+  @Getter
+  private static String ipcExecCommand;
+
   // Singleton config beans — populated at startup, read-only after init.
   // New code can read directly from these beans instead of CommonParameter.
   @Getter
@@ -159,6 +165,10 @@ public class Args extends CommonParameter {
       Args.printHelp(jc);
       exit(0);
     }
+    List<ParameterDescription> assignedParameters = getAssignedParameters(jc);
+    if (tryApplyAttachParams(cmd, assignedParameters)) {
+      return;
+    }
 
     // Resolve config file path
     configFilePath = StringUtils.isNoneBlank(cmd.shellConfFileName)
@@ -169,7 +179,7 @@ public class Args extends CommonParameter {
     applyConfigParams(config);
 
     // 3. CLI overrides Config (highest priority, including --es → eventSubscribe)
-    applyCLIParams(cmd, jc);
+    applyCLIParams(cmd, assignedParameters);
 
     // 4. Apply event config after CLI
     applyEventConfig(eventConfig);
@@ -179,6 +189,47 @@ public class Args extends CommonParameter {
 
     // 6. Init witness (depends on CLI witness flag)
     initLocalWitnesses(config, cmd);
+  }
+
+  private static List<ParameterDescription> getAssignedParameters(JCommander jc) {
+    return jc.getParameters().stream()
+        .filter(ParameterDescription::isAssigned)
+        .collect(Collectors.toList());
+  }
+
+  private static boolean tryApplyAttachParams(CLIParameter cmd,
+      List<ParameterDescription> assignedParameters) {
+    boolean attachAssigned = isParameterAssigned(assignedParameters, "ipcSocketFile");
+    if (!attachAssigned) {
+      if (isParameterAssigned(assignedParameters, "ipcExecCommand")) {
+        throwAttachParameterError("Error: --exec requires --attach <socket-path>");
+      }
+      return false;
+    }
+    if (isParameterAssigned(assignedParameters, "shellConfFileName")) {
+      throwAttachParameterError("Error: --attach cannot be combined with: --config");
+    }
+    if (StringUtils.isBlank(cmd.ipcSocketFile)) {
+      throwAttachParameterError("Error: --attach requires a non-empty <socket-path>");
+    }
+    // Node-only CLI options are irrelevant to the standalone IPC client and are ignored.
+    ipcSocketFile = cmd.ipcSocketFile;
+    ipcExecCommand = cmd.ipcExecCommand;
+    if (StringUtils.isNotEmpty(cmd.logbackPath)) {
+      PARAMETER.logbackPath = cmd.logbackPath;
+    }
+    return true;
+  }
+
+  private static void throwAttachParameterError(String message) {
+    System.err.println(message);
+    throw new TronError(message, TronError.ErrCode.PARAMETER_INIT);
+  }
+
+  private static boolean isParameterAssigned(List<ParameterDescription> assignedParameters,
+      String fieldName) {
+    return assignedParameters.stream()
+        .anyMatch(pd -> fieldName.equals(pd.getParameterized().getName()));
   }
 
   /**
@@ -561,6 +612,16 @@ public class Args extends CommonParameter {
     PARAMETER.jsonRpcMaxLogFilterNum = jsonrpc.getMaxLogFilterNum();
     PARAMETER.jsonRpcMaxMessageSize = jsonrpc.getMaxMessageSize();
 
+    // ---- Admin HTTP / IPC ----
+    NodeConfig.AdminIpcConfig adminIpc = nc.getAdmin().getIpc();
+    NodeConfig.AdminHttpConfig adminHttp = nc.getAdmin().getHttp();
+    PARAMETER.adminHttpEnable = adminHttp.isEnable();
+    PARAMETER.adminHttpListenAddress = adminHttp.getListenAddress();
+    PARAMETER.adminHttpListenPort = adminHttp.getPort();
+    PARAMETER.adminHttpVirtualHosts = new ArrayList<>(adminHttp.getVirtualHosts());
+    PARAMETER.ipcEnable = adminIpc.isEnable();
+    PARAMETER.ipcSocketDirectory = adminIpc.getSocketDirectory();
+
     // ---- P2P sub-bean ----
     PARAMETER.nodeP2pVersion = nc.getP2p().getVersion();
 
@@ -769,14 +830,13 @@ public class Args extends CommonParameter {
    * Apply CLI parameters that were explicitly passed.
    * Only assigned parameters override Config values.
    */
-  private static void applyCLIParams(CLIParameter cmd, JCommander jc) {
-    Set<String> assigned = jc.getParameters().stream()
-        .filter(ParameterDescription::isAssigned)
+  private static void applyCLIParams(CLIParameter cmd,
+      List<ParameterDescription> assignedParameters) {
+    Set<String> assigned = assignedParameters.stream()
         .map(ParameterDescription::getLongestName)
         .collect(Collectors.toSet());
 
-    jc.getParameters().stream()
-        .filter(ParameterDescription::isAssigned)
+    assignedParameters.stream()
         .filter(pd -> {
           try {
             return CLIParameter.class.getDeclaredField(pd.getParameterized().getName())
@@ -946,6 +1006,8 @@ public class Args extends CommonParameter {
     rateLimiterConfig = null;
     metricsConfig = null;
     eventConfig = null;
+    ipcSocketFile = null;
+    ipcExecCommand = null;
   }
 
   // getProposalExpirationTime removed — logic moved to BlockConfig.fromConfig()
@@ -1292,7 +1354,8 @@ public class Args extends CommonParameter {
 
   private static Map<String, String[]> getOptionGroup() {
     String[] tronOption = new String[] {"version", "help", "shellConfFileName", "logbackPath",
-        "eventSubscribe", "solidityNode", "keystoreFactory"};
+        "eventSubscribe", "solidityNode", "keystoreFactory", "ipcSocketFile",
+        "ipcExecCommand"};
     String[] dbOption = new String[] {"outputDirectory"};
     String[] witnessOption = new String[] {"witness", "privateKey"};
     String[] vmOption = new String[] {"debug"};
@@ -1315,4 +1378,3 @@ public class Args extends CommonParameter {
     return optionGroupMap;
   }
 }
-
