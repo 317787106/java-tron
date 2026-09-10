@@ -70,6 +70,7 @@ dependencies {
         implementation 'io.github.tronprotocol:leveldb:1.18.2'
     }
     implementation project(":protocol")
+    implementation project(":chainbase")
 }
 
 check.dependsOn 'lint'
@@ -149,7 +150,7 @@ def binaryRelease(taskName, jarName, mainClass) {
         // (and so partial / parallel builds cannot run binaryRelease before the
         // dependency jars exist).
         dependsOn (project(':protocol').jar, project(':platform').jar,
-                project(':crypto').jar, project(':common').jar) // explicit_dependency
+                project(':crypto').jar, project(':common').jar, project(':chainbase').jar) // explicit_dependency
         from {
             configurations.runtimeClasspath.collect { // https://docs.gradle.org/current/userguide/upgrading_version_6.html#changes_6.3
                 it.isDirectory() ? it : zipTree(it)
