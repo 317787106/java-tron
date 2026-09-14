@@ -105,7 +105,7 @@ public class FetchBlockService {
     return peers.stream()
         .filter(peer -> !peer.isDisconnect())
         .filter(peer -> !peer.isNeedSyncFromPeer() && !peer.isNeedSyncFromUs())
-        .filter(PeerConnection::isBlockIdle)
+        .filter(PeerConnection::isBlockFetchIdle)
         .filter(peer -> {
           Long received = peer.getAdvInvReceive().getIfPresent(item);
           return received != null && received >= now - NetConstants.ADV_TIME_OUT;

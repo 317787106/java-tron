@@ -16,27 +16,27 @@ public class PeerBlockIdleTest {
     Item trx = new Item(Sha256Hash.ZERO_HASH, InventoryType.TRX);
     peer.getAdvInvRequest().put(trx, System.currentTimeMillis());
     Assert.assertFalse(peer.isIdle());
-    Assert.assertTrue(peer.isBlockIdle());
+    Assert.assertTrue(peer.isBlockFetchIdle());
 
     Item block = new Item(new BlockId(), InventoryType.BLOCK);
     peer.getAdvInvRequest().put(block, System.currentTimeMillis());
-    Assert.assertFalse(peer.isBlockIdle());
+    Assert.assertFalse(peer.isBlockFetchIdle());
     peer.getAdvInvRequest().remove(block);
-    Assert.assertTrue(peer.isBlockIdle());
+    Assert.assertTrue(peer.isBlockFetchIdle());
   }
 
   @Test
   public void testSyncRequestAndProcessingExcludeBlockProvider() {
     PeerConnection peer = new PeerConnection();
     peer.getSyncBlockRequested().put(new BlockId(), System.currentTimeMillis());
-    Assert.assertFalse(peer.isBlockIdle());
+    Assert.assertFalse(peer.isBlockFetchIdle());
     peer.getSyncBlockRequested().clear();
     peer.setSyncChainRequested(new Pair<>(new ArrayDeque<>(), System.currentTimeMillis()));
-    Assert.assertFalse(peer.isBlockIdle());
+    Assert.assertFalse(peer.isBlockFetchIdle());
     peer.setSyncChainRequested(null);
     peer.getSyncBlockInProcess().add(new BlockId());
-    Assert.assertFalse(peer.isBlockIdle());
+    Assert.assertFalse(peer.isBlockFetchIdle());
     peer.getSyncBlockInProcess().clear();
-    Assert.assertTrue(peer.isBlockIdle());
+    Assert.assertTrue(peer.isBlockFetchIdle());
   }
 }
