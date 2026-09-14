@@ -1,5 +1,6 @@
 package org.tron.core.net.service.fetchblock;
 
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
@@ -7,7 +8,6 @@ import java.util.Optional;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import lombok.Getter;
-import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -16,6 +16,7 @@ import org.tron.common.parameter.CommonParameter;
 import org.tron.common.utils.Sha256Hash;
 import org.tron.core.ChainBaseManager;
 import org.tron.core.capsule.BlockCapsule;
+import org.tron.core.config.Parameter.NetConstants;
 import org.tron.core.metrics.MetricsKey;
 import org.tron.core.metrics.MetricsUtil;
 import org.tron.core.net.TronNetDelegate;
@@ -34,7 +35,7 @@ public class FetchBlockService {
   @Autowired
   private ChainBaseManager chainBaseManager;
 
-  private FetchBlockInfo fetchBlockInfo = null;
+  private volatile FetchBlockInfo fetchBlockInfo;
 
   private final long fetchTimeOut = CommonParameter.getInstance().fetchBlockTimeout;
 
@@ -59,63 +60,86 @@ public class FetchBlockService {
     ExecutorServiceManager.shutdownAndAwaitTermination(fetchBlockWorkerExecutor, esName);
   }
 
-  public void fetchBlock(List<Sha256Hash> sha256HashList, PeerConnection peer) {
+  public synchronized void fetchBlock(List<Sha256Hash> sha256HashList, PeerConnection peer) {
     if (sha256HashList.size() > 0) {
       logger.info("Begin fetch block {} from {}",
           new BlockCapsule.BlockId(sha256HashList.get(0)).getString(),
           peer.getInetAddress());
     }
-    if (null != fetchBlockInfo) {
+    long headNum = chainBaseManager.getHeadBlockNum();
+    if (fetchBlockInfo != null
+        && new BlockCapsule.BlockId(fetchBlockInfo.getHash()).getNum() > headNum) {
       return;
     }
+    fetchBlockInfo = null;
     sha256HashList.stream().filter(sha256Hash -> new BlockCapsule.BlockId(sha256Hash).getNum()
-        == chainBaseManager.getHeadBlockNum() + 1)
+        == headNum + 1)
         .findFirst().ifPresent(sha256Hash -> {
-          long now = System.currentTimeMillis();
-          fetchBlockInfo = new FetchBlockInfo(sha256Hash, peer, now);
-          logger.info("Set fetchBlockInfo, block: {}, peer: {}, time: {}", sha256Hash,
-              peer.getInetAddress(), now);
+          Long requestTime = peer.getAdvInvRequest().get(new Item(sha256Hash, InventoryType.BLOCK));
+          if (requestTime != null) {
+            fetchBlockInfo = new FetchBlockInfo(sha256Hash, peer, requestTime);
+            logger.info("Set fetchBlockInfo, block: {}, peer: {}, time: {}", sha256Hash,
+                peer.getInetAddress(), requestTime);
+          }
         });
   }
 
 
-  public void blockFetchSuccess(Sha256Hash sha256Hash) {
-    logger.info("Fetch block success, {}", new BlockCapsule.BlockId(sha256Hash).getString());
+  public synchronized void blockFetchSuccess(Sha256Hash sha256Hash) {
     FetchBlockInfo fetchBlockInfoTemp = this.fetchBlockInfo;
     if (null == fetchBlockInfoTemp || !fetchBlockInfoTemp.getHash().equals(sha256Hash)) {
       return;
     }
+    logger.info("Fetch block success, {}", new BlockCapsule.BlockId(sha256Hash).getString());
     this.fetchBlockInfo = null;
   }
 
-  private void fetchBlockProcess(FetchBlockInfo fetchBlock) {
-    if (null == fetchBlock) {
+  public synchronized void onDisconnect(PeerConnection peer) {
+    if (fetchBlockInfo != null && fetchBlockInfo.getPeer().equals(peer)) {
+      fetchBlockInfo = null;
+    }
+  }
+
+  public Optional<PeerConnection> selectBlockPeer(Collection<PeerConnection> peers,
+      Item item, long now) {
+    return peers.stream()
+        .filter(peer -> !peer.isDisconnect())
+        .filter(peer -> !peer.isNeedSyncFromPeer() && !peer.isNeedSyncFromUs())
+        .filter(PeerConnection::isBlockIdle)
+        .filter(peer -> {
+          Long received = peer.getAdvInvReceive().getIfPresent(item);
+          return received != null && received >= now - NetConstants.ADV_TIME_OUT;
+        })
+        .min(Comparator.comparingDouble(this::getPeerTop75));
+  }
+
+  private synchronized void fetchBlockProcess(FetchBlockInfo fetchBlock) {
+    if (fetchBlock == null || fetchBlockInfo != fetchBlock) {
+      return;
+    }
+    if (new BlockCapsule.BlockId(fetchBlock.getHash()).getNum()
+        <= chainBaseManager.getHeadBlockNum()) {
+      fetchBlockInfo = null;
+      return;
+    }
+    long now = System.currentTimeMillis();
+    if (now - fetchBlock.getTime() >= NetConstants.ADV_TIME_OUT) {
+      // PeerStatusCheck owns the final deadline and disconnects the responsible provider.
       return;
     }
     Item item = new Item(fetchBlock.getHash(), InventoryType.BLOCK);
-    Optional<PeerConnection> optionalPeerConnection = tronNetDelegate.getActivePeer().stream()
-        .filter(PeerConnection::isIdle)
-        .filter(filterPeer -> !filterPeer.equals(fetchBlock.getPeer()))
-        .filter(filterPeer -> filterPeer.getAdvInvReceive().getIfPresent(item) != null)
-        .filter(filterPeer -> getPeerTop75(filterPeer)
-            <= CommonParameter.getInstance().fetchBlockTimeout)
-        .min(Comparator.comparingDouble(this::getPeerTop75));
+    Optional<PeerConnection> optionalPeerConnection = selectBlockPeer(
+        tronNetDelegate.getActivePeer(), item, now);
 
     if (optionalPeerConnection.isPresent()) {
       optionalPeerConnection.ifPresent(firstPeer -> {
         if (shouldFetchBlock(firstPeer, fetchBlock)
-            && firstPeer.checkAndPutAdvInvRequest(item, System.currentTimeMillis())) {
+            && firstPeer.checkAndPutAdvInvRequest(item, now)) {
+          this.fetchBlockInfo = new FetchBlockInfo(item.getHash(), firstPeer, now);
           firstPeer.sendMessage(new FetchInvDataMessage(Collections.singletonList(item.getHash()),
               item.getType()));
-          this.fetchBlockInfo = null;
         }
       });
-    } else {
-      if (System.currentTimeMillis() - fetchBlock.getTime() >= fetchTimeOut) {
-        logger.info("Clear fetchBlockInfo due to fetch block {} timeout {}ms",
-                fetchBlock.getHash(), fetchTimeOut);
-        this.fetchBlockInfo = null;
-      }
     }
   }
 
@@ -140,16 +164,13 @@ public class FetchBlockService {
   private static class FetchBlockInfo {
 
     @Getter
-    @Setter
-    private PeerConnection peer;
+    private final PeerConnection peer;
 
     @Getter
-    @Setter
-    private Sha256Hash hash;
+    private final Sha256Hash hash;
 
     @Getter
-    @Setter
-    private long time;
+    private final long time;
 
     public FetchBlockInfo(Sha256Hash hash, PeerConnection peer, long time) {
       this.peer = peer;
