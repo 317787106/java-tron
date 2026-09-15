@@ -57,7 +57,7 @@ public class HandleLogsFilterTest {
 
     jsonRpc.handleLogsFilter(capsule);
 
-    Assert.assertEquals(1, filterAndResult.getResult().size());
+    Assert.assertEquals(1, filterAndResult.size());
   }
 
   /**
@@ -77,7 +77,7 @@ public class HandleLogsFilterTest {
 
     jsonRpc.handleLogsFilter(capsule);
 
-    Assert.assertTrue(filterAndResult.getResult().isEmpty());
+    Assert.assertTrue(filterAndResult.size() == 0);
   }
 
   /**
@@ -125,8 +125,8 @@ public class HandleLogsFilterTest {
 
     jsonRpc.handleLogsFilter(capsule);
 
-    Assert.assertEquals(1, solidityFilter.getResult().size());
-    Assert.assertTrue("full-node filter must not be touched", fullFilter.getResult().isEmpty());
+    Assert.assertEquals(1, solidityFilter.size());
+    Assert.assertTrue("full-node filter must not be touched", fullFilter.size() == 0);
   }
 
   /**
@@ -148,8 +148,8 @@ public class HandleLogsFilterTest {
 
     jsonRpc.handleLogsFilter(capsule);
 
-    Assert.assertEquals(1, fullFilter.getResult().size());
-    Assert.assertTrue("solidity filter must not be touched", solidityFilter.getResult().isEmpty());
+    Assert.assertEquals(1, fullFilter.size());
+    Assert.assertTrue("solidity filter must not be touched", solidityFilter.size() == 0);
   }
 
   /**
@@ -170,8 +170,8 @@ public class HandleLogsFilterTest {
 
     jsonRpc.handleLogsFilter(capsule);
 
-    Assert.assertEquals(1, filter1.getResult().size());
-    Assert.assertEquals(1, filter2.getResult().size());
+    Assert.assertEquals(1, filter1.size());
+    Assert.assertEquals(1, filter2.size());
   }
 
   /**
@@ -188,7 +188,7 @@ public class HandleLogsFilterTest {
 
     jsonRpc.handleLogsFilter(capsule);
 
-    Assert.assertTrue(filterAndResult.getResult().isEmpty());
+    Assert.assertTrue(filterAndResult.size() == 0);
   }
 
   private void setParallelThreshold(int value) {
@@ -218,7 +218,7 @@ public class HandleLogsFilterTest {
 
     for (int i = 0; i < count; i++) {
       Assert.assertEquals("filter " + i + " must receive exactly one event",
-          1, map.get(prefix + i).getResult().size());
+          1, map.get(prefix + i).size());
     }
   }
 
@@ -255,7 +255,7 @@ public class HandleLogsFilterTest {
     }
     for (int i = expiredCount; i < expiredCount + validCount; i++) {
       Assert.assertEquals("valid filter " + i + " must receive one event",
-          1, map.get(prefix + i).getResult().size());
+          1, map.get(prefix + i).size());
     }
   }
 
@@ -285,9 +285,9 @@ public class HandleLogsFilterTest {
 
     for (int i = 0; i < count; i++) {
       Assert.assertEquals("solidity filter " + i + " must receive one event",
-          1, solidityMap.get(solidityPrefix + i).getResult().size());
+          1, solidityMap.get(solidityPrefix + i).size());
     }
     Assert.assertTrue("full-map filter must not receive events",
-        fullFilter.getResult().isEmpty());
+        fullFilter.size() == 0);
   }
 }

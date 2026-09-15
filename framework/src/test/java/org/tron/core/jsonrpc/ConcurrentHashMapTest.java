@@ -11,12 +11,14 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import lombok.extern.slf4j.Slf4j;
+import org.junit.After;
 import org.junit.Assert;
 import org.junit.Test;
 import org.tron.common.es.ExecutorServiceManager;
 import org.tron.common.logsfilter.capsule.BlockFilterCapsule;
 import org.tron.common.utils.ByteArray;
 import org.tron.core.exception.ItemNotFoundException;
+import org.tron.core.exception.jsonrpc.JsonRpcFilterOverflowException;
 import org.tron.core.services.jsonrpc.TronJsonRpcImpl;
 import org.tron.core.services.jsonrpc.filters.BlockFilterAndResult;
 
@@ -24,6 +26,11 @@ import org.tron.core.services.jsonrpc.filters.BlockFilterAndResult;
 public class ConcurrentHashMapTest {
   private static final String EXECUTOR_NAME = "jsonrpc-concurrent-map-test";
   private final TronJsonRpcImpl jsonRpc = new TronJsonRpcImpl(null, null);
+
+  @After
+  public void tearDown() throws Exception {
+    jsonRpc.close();
+  }
 
   private static int randomInt(int minInt, int maxInt) {
     return (int) round(random(true) * (maxInt - minInt) + minInt, true);
@@ -104,7 +111,7 @@ public class ConcurrentHashMapTest {
                 resultMap1.get(String.valueOf(k)).add(str.toString());
               }
 
-            } catch (ItemNotFoundException e) {
+            } catch (ItemNotFoundException | JsonRpcFilterOverflowException e) {
               Assert.fail("Filter ID should always exist: " + e.getMessage());
             }
           }
@@ -136,7 +143,7 @@ public class ConcurrentHashMapTest {
                 resultMap2.get(String.valueOf(k)).add(str.toString());
               }
 
-            } catch (ItemNotFoundException e) {
+            } catch (ItemNotFoundException | JsonRpcFilterOverflowException e) {
               Assert.fail("Filter ID should always exist: " + e.getMessage());
             }
           }
@@ -168,7 +175,7 @@ public class ConcurrentHashMapTest {
                 }
               }
 
-            } catch (ItemNotFoundException e) {
+            } catch (ItemNotFoundException | JsonRpcFilterOverflowException e) {
               Assert.fail("Filter ID should always exist: " + e.getMessage());
             }
           }
