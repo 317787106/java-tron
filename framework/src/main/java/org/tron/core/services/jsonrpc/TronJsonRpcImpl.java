@@ -71,6 +71,7 @@ import org.tron.core.exception.HeaderNotFound;
 import org.tron.core.exception.ItemNotFoundException;
 import org.tron.core.exception.VMIllegalException;
 import org.tron.core.exception.jsonrpc.JsonRpcExceedLimitException;
+import org.tron.core.exception.jsonrpc.JsonRpcFilterOverflowException;
 import org.tron.core.exception.jsonrpc.JsonRpcInternalException;
 import org.tron.core.exception.jsonrpc.JsonRpcInvalidParamsException;
 import org.tron.core.exception.jsonrpc.JsonRpcInvalidRequestException;
@@ -80,6 +81,7 @@ import org.tron.core.services.NodeInfoService;
 import org.tron.core.services.http.JsonFormat;
 import org.tron.core.services.http.Util;
 import org.tron.core.services.jsonrpc.filters.BlockFilterAndResult;
+import org.tron.core.services.jsonrpc.filters.FilterResult;
 import org.tron.core.services.jsonrpc.filters.LogBlockQuery;
 import org.tron.core.services.jsonrpc.filters.LogFilter;
 import org.tron.core.services.jsonrpc.filters.LogFilterAndResult;
@@ -237,11 +239,11 @@ public class TronJsonRpcImpl implements TronJsonRpc, Closeable {
     }
     while (it.hasNext()) {
       Entry<String, BlockFilterAndResult> entry = it.next();
-      if (entry.getValue().isExpire()) {
+      if (entry.getValue().expire()) {
         it.remove();
         continue;
       }
-      entry.getValue().getResult().add(cachedBlockHash);
+      entry.getValue().add(cachedBlockHash);
     }
   }
 
@@ -276,8 +278,11 @@ public class TronJsonRpcImpl implements TronJsonRpc, Closeable {
       Map<String, LogFilterAndResult> eventFilterMap,
       LogsFilterCapsule logsFilterCapsule) {
     LogFilterAndResult logFilterAndResult = entry.getValue();
-    if (logFilterAndResult.isExpire()) {
-      eventFilterMap.remove(entry.getKey());
+    if (logFilterAndResult.expire()) {
+      eventFilterMap.remove(entry.getKey(), logFilterAndResult);
+      return;
+    }
+    if (logFilterAndResult.isOverflowed()) {
       return;
     }
 
@@ -310,7 +315,7 @@ public class TronJsonRpcImpl implements TronJsonRpc, Closeable {
       }
       localResults.add(cachedElement);
     }
-    logFilterAndResult.getResult().addAll(localResults);
+    logFilterAndResult.addAll(localResults);
   }
 
   @Override
@@ -1503,20 +1508,21 @@ public class TronJsonRpcImpl implements TronJsonRpc, Closeable {
     }
 
     filterId = ByteArray.fromHex(filterId);
-    if (eventFilter2Result.containsKey(filterId)) {
-      eventFilter2Result.remove(filterId);
-    } else if (blockFilter2Result.containsKey(filterId)) {
-      blockFilter2Result.remove(filterId);
-    } else {
+    FilterResult<?> removed = eventFilter2Result.remove(filterId);
+    if (removed == null) {
+      removed = blockFilter2Result.remove(filterId);
+    }
+    if (removed == null) {
       throw new ItemNotFoundException(FILTER_NOT_FOUND);
     }
+    removed.close();
 
     return true;
   }
 
   @Override
   public Object[] getFilterChanges(String filterId) throws ItemNotFoundException,
-      JsonRpcMethodNotFoundException {
+      JsonRpcMethodNotFoundException, JsonRpcFilterOverflowException {
     disableInPBFT("eth_getFilterChanges");
 
     Map<String, BlockFilterAndResult> blockFilter2Result;
@@ -1551,7 +1557,8 @@ public class TronJsonRpcImpl implements TronJsonRpc, Closeable {
   public LogFilterElement[] getFilterLogs(String filterId) throws
       JsonRpcInvalidParamsException, ExecutionException,
       InterruptedException, BadItemException, ItemNotFoundException,
-      JsonRpcMethodNotFoundException, JsonRpcTooManyResultException {
+      JsonRpcMethodNotFoundException, JsonRpcTooManyResultException,
+      JsonRpcFilterOverflowException {
     disableInPBFT("eth_getFilterLogs");
 
     Map<String, LogFilterAndResult> eventFilter2Result;
@@ -1562,11 +1569,13 @@ public class TronJsonRpcImpl implements TronJsonRpc, Closeable {
     }
 
     filterId = ByteArray.fromHex(filterId);
-    if (!eventFilter2Result.containsKey(filterId)) {
+    LogFilterAndResult filter = eventFilter2Result.get(filterId);
+    if (filter == null) {
       throw new ItemNotFoundException(FILTER_NOT_FOUND);
     }
+    filter.checkValid();
 
-    LogFilterWrapper logFilterWrapper = eventFilter2Result.get(filterId).getLogFilterWrapper();
+    LogFilterWrapper logFilterWrapper = filter.getLogFilterWrapper();
     long currentMaxBlockNum = wallet.getNowBlock().getBlockHeader().getRawData().getNumber();
 
     // re-check the block range against the current head: the filter was created without the cap
@@ -1592,29 +1601,29 @@ public class TronJsonRpcImpl implements TronJsonRpc, Closeable {
 
   public Object[] getFilterResult(String filterId, Map<String, BlockFilterAndResult>
       blockFilter2Result, Map<String, LogFilterAndResult> eventFilter2Result)
-      throws ItemNotFoundException {
-    Object[] result;
-
-    if (blockFilter2Result.containsKey(filterId)) {
-      List<String> blockHashList = blockFilter2Result.get(filterId).popAll();
-      result = blockHashList.toArray(new String[blockHashList.size()]);
-      blockFilter2Result.get(filterId).updateExpireTime();
-
-    } else if (eventFilter2Result.containsKey(filterId)) {
-      List<LogFilterElement> logElementList = eventFilter2Result.get(filterId).popAll();
-      result = logElementList.toArray(new LogFilterElement[0]);
-      eventFilter2Result.get(filterId).updateExpireTime();
-
-    } else {
-      throw new ItemNotFoundException(FILTER_NOT_FOUND);
+      throws ItemNotFoundException, JsonRpcFilterOverflowException {
+    BlockFilterAndResult blockFilter = blockFilter2Result.get(filterId);
+    if (blockFilter != null) {
+      return blockFilter.popAll().toArray(new String[0]);
     }
-
-    return result;
+    LogFilterAndResult logFilter = eventFilter2Result.get(filterId);
+    if (logFilter != null) {
+      return logFilter.popAll().toArray(new LogFilterElement[0]);
+    }
+    throw new ItemNotFoundException(FILTER_NOT_FOUND);
   }
 
   @Override
   public void close() throws IOException {
     ExecutorServiceManager.shutdownAndAwaitTermination(logsFilterPool, "logs-filter-pool");
+    eventFilter2ResultFull.values().forEach(FilterResult::close);
+    eventFilter2ResultFull.clear();
+    eventFilter2ResultSolidity.values().forEach(FilterResult::close);
+    eventFilter2ResultSolidity.clear();
+    blockFilter2ResultFull.values().forEach(FilterResult::close);
+    blockFilter2ResultFull.clear();
+    blockFilter2ResultSolidity.values().forEach(FilterResult::close);
+    blockFilter2ResultSolidity.clear();
     logElementCache.invalidateAll();
     blockHashCache.invalidateAll();
     ExecutorServiceManager.shutdownAndAwaitTermination(sectionExecutor, esName);

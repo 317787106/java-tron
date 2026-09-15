@@ -19,6 +19,7 @@ import org.tron.common.utils.ByteArray;
 import org.tron.core.exception.BadItemException;
 import org.tron.core.exception.ItemNotFoundException;
 import org.tron.core.exception.jsonrpc.JsonRpcExceedLimitException;
+import org.tron.core.exception.jsonrpc.JsonRpcFilterOverflowException;
 import org.tron.core.exception.jsonrpc.JsonRpcInternalException;
 import org.tron.core.exception.jsonrpc.JsonRpcInvalidParamsException;
 import org.tron.core.exception.jsonrpc.JsonRpcInvalidRequestException;
@@ -314,13 +315,14 @@ public interface TronJsonRpc {
 
   @JsonRpcMethod("eth_getFilterChanges")
   @JsonRpcErrors({
+      @JsonRpcError(exception = JsonRpcFilterOverflowException.class, code = -32005),
       @JsonRpcError(exception = JsonRpcMethodNotFoundException.class, code = -32601, data = "{}"),
       @JsonRpcError(exception = JsonRpcInvalidParamsException.class, code = -32602, data = "{}"),
       @JsonRpcError(exception = ItemNotFoundException.class, code = -32000, data = "{}"),
   })
   Object[] getFilterChanges(String filterId)
       throws JsonRpcInvalidParamsException, IOException, ExecutionException, InterruptedException,
-      JsonRpcMethodNotFoundException, ItemNotFoundException;
+      JsonRpcMethodNotFoundException, ItemNotFoundException, JsonRpcFilterOverflowException;
 
   @JsonRpcMethod("eth_getLogs")
   @JsonRpcErrors({
@@ -338,6 +340,7 @@ public interface TronJsonRpc {
 
   @JsonRpcMethod("eth_getFilterLogs")
   @JsonRpcErrors({
+      @JsonRpcError(exception = JsonRpcFilterOverflowException.class, code = -32005),
       @JsonRpcError(exception = JsonRpcInvalidParamsException.class, code = -32602, data = "{}"),
       @JsonRpcError(exception = JsonRpcMethodNotFoundException.class, code = -32601, data = "{}"),
       @JsonRpcError(exception = JsonRpcTooManyResultException.class, code = -32005, data = "{}"),
@@ -348,7 +351,7 @@ public interface TronJsonRpc {
   })
   LogFilterElement[] getFilterLogs(String filterId) throws JsonRpcInvalidParamsException,
       ExecutionException, InterruptedException, BadItemException, ItemNotFoundException,
-      JsonRpcMethodNotFoundException, JsonRpcTooManyResultException;
+      JsonRpcMethodNotFoundException, JsonRpcTooManyResultException, JsonRpcFilterOverflowException;
 
   @AllArgsConstructor
   @ToString
