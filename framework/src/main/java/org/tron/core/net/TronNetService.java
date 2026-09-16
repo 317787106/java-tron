@@ -4,9 +4,11 @@ import java.net.Inet4Address;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.UnknownHostException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.CopyOnWriteArrayList;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -160,14 +162,20 @@ public class TronNetService {
   }
 
   private P2pConfig updateConfig(P2pConfig config) {
-    List<InetSocketAddress> seeds = parameter.getSeedNode().getAddressList();
+    List<InetSocketAddress> seeds =
+        new ArrayList<>(parameter.getSeedNode().getAddressList());
     seeds.addAll(nodePersistService.dbRead());
     logger.debug("Seed InetSocketAddress: {}", seeds);
     config.getSeedNodes().addAll(seeds);
-    config.getActiveNodes().addAll(parameter.getActiveNodes());
-    config.getTrustNodes().addAll(parameter.getPassiveNodes());
-    config.getActiveNodes().forEach(n -> config.getTrustNodes().add(n.getAddress()));
-    parameter.getFastForwardNodes().forEach(f -> config.getTrustNodes().add(f.getAddress()));
+    // These lists are read by configuration exporters and network services while dynamic reloads
+    // and relay tasks may replace or modify them. Snapshot-based copy-on-write lists prevent
+    // transient empty/partial views and ConcurrentModificationException during iteration.
+    List<InetSocketAddress> activeNodes = new CopyOnWriteArrayList<>(parameter.getActiveNodes());
+    config.setActiveNodes(activeNodes);
+    List<InetAddress> trustNodes = new CopyOnWriteArrayList<>(parameter.getPassiveNodes());
+    activeNodes.forEach(n -> trustNodes.add(n.getAddress()));
+    parameter.getFastForwardNodes().forEach(f -> trustNodes.add(f.getAddress()));
+    config.setTrustNodes(trustNodes);
     int maxConnections = parameter.getMaxConnections();
     int minConnections = parameter.getMinConnections();
     int minActiveConnections = parameter.getMinActiveConnections();

@@ -2,17 +2,23 @@ package org.tron.core.net.services;
 
 import java.lang.reflect.Method;
 import java.net.InetSocketAddress;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 import javax.annotation.Resource;
 import org.junit.Assert;
 import org.junit.BeforeClass;
 import org.junit.Test;
+import org.mockito.Mockito;
 import org.tron.common.BaseTest;
 import org.tron.common.TestConstants;
+import org.tron.common.parameter.CommonParameter;
 import org.tron.common.utils.PublicMethod;
 import org.tron.common.utils.ReflectUtils;
 import org.tron.core.config.args.Args;
 import org.tron.core.net.TronNetService;
 import org.tron.core.net.service.effective.EffectiveCheckService;
+import org.tron.core.net.service.nodepersist.NodePersistService;
 import org.tron.p2p.P2pConfig;
 
 public class EffectiveCheckServiceTest extends BaseTest {
@@ -37,6 +43,38 @@ public class EffectiveCheckServiceTest extends BaseTest {
     config.setIp(null);
     P2pConfig newConfig = (P2pConfig) privateMethod.invoke(tronNetService, config);
     Assert.assertNotNull(newConfig.getIp());
+  }
+
+  @Test
+  public void testUpdateConfigDoesNotMutateConfiguredSeedNodes() throws Exception {
+    CommonParameter parameter = Args.getInstance();
+    List<InetSocketAddress> originalSeedNodes = parameter.getSeedNode().getAddressList();
+    NodePersistService originalNodePersistService =
+        ReflectUtils.getFieldValue(tronNetService, "nodePersistService");
+    InetSocketAddress configuredSeed =
+        InetSocketAddress.createUnresolved("seed.example.org", 18888);
+    InetSocketAddress persistedPeer =
+        InetSocketAddress.createUnresolved("persisted.example.org", 18888);
+    NodePersistService nodePersistService = Mockito.mock(NodePersistService.class);
+    Mockito.when(nodePersistService.dbRead()).thenReturn(Arrays.asList(persistedPeer));
+    try {
+      parameter.getSeedNode().setAddressList(
+          new ArrayList<>(Arrays.asList(configuredSeed)));
+      ReflectUtils.setFieldValue(tronNetService, "nodePersistService", nodePersistService);
+      Method updateConfig = tronNetService.getClass()
+          .getDeclaredMethod("updateConfig", P2pConfig.class);
+      updateConfig.setAccessible(true);
+
+      P2pConfig updated = (P2pConfig) updateConfig.invoke(tronNetService, new P2pConfig());
+
+      Assert.assertEquals(Arrays.asList(configuredSeed),
+          parameter.getSeedNode().getAddressList());
+      Assert.assertTrue(updated.getSeedNodes().contains(configuredSeed));
+      Assert.assertTrue(updated.getSeedNodes().contains(persistedPeer));
+    } finally {
+      parameter.getSeedNode().setAddressList(originalSeedNodes);
+      ReflectUtils.setFieldValue(tronNetService, "nodePersistService", originalNodePersistService);
+    }
   }
 
   @Test

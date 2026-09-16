@@ -19,6 +19,7 @@ import com.google.common.collect.Maps;
 import com.google.protobuf.ByteString;
 import com.typesafe.config.Config;
 import java.io.File;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -46,8 +47,11 @@ public class Storage {
   private static final String DEFAULT_INDEX_SWITCH = "on";
 
   // Optional per-tier LevelDB option overrides, read from StorageConfig bean
+  @Getter
   private StorageConfig.DbOptionOverride defaultDbOption;
+  @Getter
   private StorageConfig.DbOptionOverride defaultMDbOption;
+  @Getter
   private StorageConfig.DbOptionOverride defaultLDbOption;
 
   /**
@@ -85,6 +89,7 @@ public class Storage {
   @Setter
   private boolean checkpointSync;
 
+  @Getter
   private Options defaultDbOptions;
 
   @Getter
@@ -127,8 +132,16 @@ public class Storage {
     return this.cacheStrategies.getOrDefault(dbName, CacheStrategies.getCacheStrategy(dbName));
   }
 
+  public Map<CacheType, String> getCacheStrategies() {
+    return new HashMap<>(cacheStrategies);
+  }
+
   public Sha256Hash getDbRoot(String dbName, Sha256Hash defaultV) {
     return this.dbRoots.getOrDefault(dbName, defaultV);
+  }
+
+  public Map<String, Sha256Hash> getDbRoots() {
+    return new HashMap<>(dbRoots);
   }
 
   /**
