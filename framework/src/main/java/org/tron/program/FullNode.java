@@ -14,6 +14,7 @@ import org.tron.common.prometheus.Metrics;
 import org.tron.core.config.DefaultConfig;
 import org.tron.core.config.args.Args;
 import org.tron.core.exception.TronError;
+import org.tron.core.services.admin.ipc.IpcClient;
 
 @Slf4j(topic = "app")
 public class FullNode {
@@ -25,8 +26,15 @@ public class FullNode {
     ExitManager.initExceptionHandler();
     checkJdkVersion();
     Args.setParam(args, "config.conf");
-    CommonParameter parameter = Args.getInstance();
+    if (StringUtils.isNotEmpty(Args.getIpcSocketFile())) {
+      int exitCode = IpcClient.start(Args.getIpcSocketFile(), Args.getIpcExecCommand());
+      if (exitCode != 0) {
+        System.exit(exitCode);
+      }
+      return;
+    }
 
+    CommonParameter parameter = Args.getInstance();
     LogService.load(parameter.getLogbackPath());
 
     if (parameter.isKeystoreFactory()) {
