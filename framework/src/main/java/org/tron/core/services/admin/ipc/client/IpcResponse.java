@@ -3,8 +3,11 @@ package org.tron.core.services.admin.ipc.client;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.util.Collections;
+import java.util.Map;
 import lombok.AccessLevel;
 import lombok.Getter;
+import org.tron.core.services.admin.ipc.client.ActivePeerOutputFormatter.OutputFormat;
 
 /** A console-ready JSON-RPC response, parsed without initializing node logging. */
 @Getter(AccessLevel.PACKAGE)
@@ -29,11 +32,18 @@ final class IpcResponse {
    * input is preserved verbatim.
    */
   static IpcResponse parse(String response) {
+    return parse(response, Collections.emptyMap());
+  }
+
+  static IpcResponse parse(String response, Map<Integer, OutputFormat> pendingOutputFormats) {
     try {
       JsonNode root = OBJECT_MAPPER.readTree(response);
       if (root == null || root.isMissingNode()) {
         return new IpcResponse(response, false);
       }
+      JsonNode responseId = root.get("id");
+      OutputFormat outputFormat = responseId != null && responseId.isIntegralNumber()
+          ? pendingOutputFormats.remove(responseId.asInt()) : OutputFormat.JSON;
       JsonNode error = root.get("error");
       if (error != null && !error.isNull()) {
         String code = error.has("code") ? " " + error.get("code").asText() : "";
@@ -41,6 +51,12 @@ final class IpcResponse {
         return new IpcResponse("Error" + code + ": " + message, false);
       }
       if (root.has("result")) {
+        if (outputFormat == OutputFormat.TEXT) {
+          String table = new ActivePeerOutputFormatter().formatText(root.get("result"));
+          if (table != null) {
+            return new IpcResponse(table, true);
+          }
+        }
         return new IpcResponse(formatJsonValue(root.get("result")), true);
       }
       return new IpcResponse(formatJsonValue(root), false);

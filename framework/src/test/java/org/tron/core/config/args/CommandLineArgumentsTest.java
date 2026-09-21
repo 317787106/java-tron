@@ -22,13 +22,13 @@ public class CommandLineArgumentsTest {
   @Test
   public void testAttachIgnoresNodeOnlyOptions() {
     CommandLineArguments arguments = new CommandLineArguments(new String[] {
-        "--attach", "node.sock", "--exec", "admin_example one two", "--witness",
+        "--attach", "node.sock", "--exec", "admin_listBlockedIps", "--witness",
         "--log-config", "unused.xml"
     });
 
     Assert.assertTrue(arguments.isAttachMode());
     Assert.assertEquals("node.sock", arguments.getParameters().ipcSocketFile);
-    Assert.assertEquals("admin_example one two", arguments.getParameters().ipcExecCommand);
+    Assert.assertEquals("admin_listBlockedIps", arguments.getParameters().ipcExecCommand);
   }
 
   @Test

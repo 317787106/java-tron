@@ -56,12 +56,12 @@ public class ArgsTest {
     try {
       Args.setParam(new String[] {
           "--attach", "/tmp/java-tron.sock",
-          "--exec", "admin_example one two",
+          "--exec", "admin_listBlockedIps",
           "--log-config", "attach-logback.xml"
       }, TestConstants.TEST_CONF);
 
       Assert.assertEquals("/tmp/java-tron.sock", Args.getIpcSocketFile());
-      Assert.assertEquals("admin_example one two", Args.getIpcExecCommand());
+      Assert.assertEquals("admin_listBlockedIps", Args.getIpcExecCommand());
       Assert.assertEquals("attach-logback.xml", Args.getInstance().getLogbackPath());
       Assert.assertNull(Args.getNodeConfig());
       Assert.assertNull(Args.getLocalWitnesses());
@@ -100,7 +100,7 @@ public class ArgsTest {
   public void testExecRequiresAttach() {
     Args.clearParam();
     try {
-      assertAttachParameterError(new String[] {"--exec", "admin_example"},
+      assertAttachParameterError(new String[] {"--exec", "admin_listBlockedIps"},
           "Error: --exec requires --attach <socket-path>");
     } finally {
       Args.clearParam();
