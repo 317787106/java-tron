@@ -1,4 +1,4 @@
-package org.tron.core.services.admin.ipc;
+package org.tron.core.services.admin.ipc.client;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import java.util.ArrayList;

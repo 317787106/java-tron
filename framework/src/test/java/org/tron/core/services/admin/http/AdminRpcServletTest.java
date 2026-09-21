@@ -10,7 +10,6 @@ import java.io.IOException;
 import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
-import java.util.HashSet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import org.junit.Before;
@@ -186,7 +185,7 @@ public class AdminRpcServletTest {
   }
 
   private void setVirtualHosts(String... hosts) throws Exception {
-    setField("virtualHosts", new HashSet<>(Arrays.asList(hosts)));
+    setField("virtualHostValidator", new VirtualHostValidator(Arrays.asList(hosts)));
   }
 
   private static class TestableServlet extends AdminRpcServlet {

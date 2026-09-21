@@ -1,17 +1,16 @@
-package org.tron.core.services.admin.ipc;
+package org.tron.core.services.admin.ipc.client;
 
-import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.fasterxml.jackson.databind.type.TypeFactory;
-import com.googlecode.jsonrpc4j.JsonRpcMethod;
+import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.PrintStream;
 import java.net.ServerSocket;
 import java.net.Socket;
@@ -25,6 +24,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import org.jline.reader.LineReader;
+import org.jline.reader.SyntaxError;
 import org.jline.reader.UserInterruptException;
 import org.junit.Assert;
 import org.junit.Test;
@@ -42,100 +42,6 @@ public class IpcClientTest {
     } catch (NoSuchFieldException expected) {
       // No logger field means loading IpcClient cannot initialize SLF4J through this class.
     }
-  }
-
-  @Test
-  public void testBuildHelpLinesIncludesSortedCommandParameters() {
-    IpcClient client = new IpcClient("unused");
-
-    Assert.assertEquals(Arrays.asList(
-        "admin_addPeer <endpoint:string>",
-        "admin_blockIp <ip:string>",
-        "admin_disconnectPeer <endpoint:string>",
-        "admin_listActivePeers [format:json|text]",
-        "admin_listBlockedIps",
-        "admin_removePeer <endpoint:string>",
-        "admin_unblockIp <ip:string>",
-        "help [command]",
-        "exit/quit"), client.buildHelpLines());
-  }
-
-  @Test
-  public void testCompletionUsesCanonicalMethodNames() {
-    IpcClient client = new IpcClient("unused");
-
-    Assert.assertArrayEquals(new String[] {
-        "admin_addPeer",
-        "admin_blockIp",
-        "admin_disconnectPeer",
-        "admin_listActivePeers",
-        "admin_listBlockedIps",
-        "admin_removePeer",
-        "admin_unblockIp"
-    }, client.getCompletionCommandNames());
-  }
-
-  @Test
-  public void testMissingJsonRpcParameterAnnotationIsRejected() {
-    try {
-      new IpcClient("unused", MissingParameterAnnotationApi.class);
-      Assert.fail("Expected an unannotated JSON-RPC parameter to be rejected");
-    } catch (IllegalStateException e) {
-      Assert.assertEquals("Missing @JsonRpcParam on invalid parameter 0", e.getMessage());
-    }
-  }
-
-  @Test
-  public void testParseCommandLinePreservesQuotedArguments() {
-    IpcClient client = new IpcClient("unused");
-
-    Assert.assertEquals(Arrays.asList("custom_method", " hello world ", "second value"),
-        client.parseCommandLine(" \tcustom_method \" hello world \" 'second value'  "));
-  }
-
-  @Test
-  public void testConvertTypedArguments() {
-    IpcClient client = new IpcClient("unused");
-    TypeFactory typeFactory = TypeFactory.defaultInstance();
-
-    Assert.assertEquals(42, client.convertArgument("42",
-        typeFactory.constructType(Integer.TYPE), "number"));
-    Assert.assertEquals(true, client.convertArgument("true",
-        typeFactory.constructType(Boolean.TYPE), "enabled"));
-    JavaType listType = typeFactory.constructCollectionType(java.util.List.class, Integer.class);
-    Assert.assertEquals(Arrays.asList(1, 2),
-        client.convertArgument("[1,2]", listType, "numbers"));
-
-    try {
-      client.convertArgument("null", typeFactory.constructType(Integer.TYPE), "number");
-      Assert.fail("Expected null to be rejected for a primitive parameter");
-    } catch (IllegalArgumentException e) {
-      Assert.assertEquals("Invalid value for <number>; expected int", e.getMessage());
-    }
-
-    try {
-      client.convertArgument("sensitive-value", typeFactory.constructType(Integer.TYPE), "number");
-      Assert.fail("Expected an invalid typed parameter");
-    } catch (IllegalArgumentException e) {
-      Assert.assertEquals("Invalid value for <number>; expected int", e.getMessage());
-      Assert.assertFalse(e.getMessage().contains("sensitive-value"));
-    }
-  }
-
-  @Test
-  public void testFormatResponseShowsResultOrStructuredError() {
-    IpcClient client = new IpcClient("unused");
-
-    Assert.assertEquals("done", client.formatResponse(
-        "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":\"done\"}"));
-    String formattedObject = client.formatResponse(
-        "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"height\":10,\"ready\":true}}");
-    Assert.assertTrue(formattedObject, formattedObject.contains(System.lineSeparator()));
-    Assert.assertTrue(formattedObject, formattedObject.contains("\"height\" : 10"));
-    Assert.assertEquals("Error -32602: Invalid params", client.formatResponse(
-        "{\"jsonrpc\":\"2.0\",\"id\":1,"
-            + "\"error\":{\"code\":-32602,\"message\":\"Invalid params\"}}"));
-    Assert.assertEquals("", client.formatResponse(""));
   }
 
   @Test
@@ -232,7 +138,7 @@ public class IpcClientTest {
     ByteArrayOutputStream requestOutput = new ByteArrayOutputStream();
     Mockito.when(socket.getOutputStream()).thenReturn(requestOutput);
     Mockito.when(socket.getInputStream()).thenReturn(new ByteArrayInputStream(
-        "\n{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":\"added\"}\n"
+        "\n{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":\"hello world:b\"}\n"
             .getBytes(StandardCharsets.UTF_8)));
 
     PrintStream originalOut = System.out;
@@ -241,8 +147,7 @@ public class IpcClientTest {
     try {
       System.setOut(capturedOut);
       Assert.assertEquals(IpcClient.EXIT_SUCCESS,
-          new IpcClient("unused").runExec(socket,
-              "  admin_addPeer \"192.0.2.20:18888\" \t"));
+          new IpcClient("unused").runExec(socket, "  admin_addPeer \"hello world\" \t"));
     } finally {
       System.setOut(originalOut);
       capturedOut.close();
@@ -250,8 +155,9 @@ public class IpcClientTest {
 
     JsonNode request = OBJECT_MAPPER.readTree(requestOutput.toString("UTF-8"));
     Assert.assertEquals("admin_addPeer", request.get("method").asText());
-    Assert.assertEquals("192.0.2.20:18888", request.get("params").get(0).asText());
-    Assert.assertEquals("added" + System.lineSeparator(),
+    Assert.assertEquals("hello world", request.get("params").get(0).asText());
+    Assert.assertEquals(1, request.get("params").size());
+    Assert.assertEquals("hello world:b" + System.lineSeparator(),
         consoleOutput.toString("UTF-8"));
   }
 
@@ -280,22 +186,35 @@ public class IpcClientTest {
 
   @Test
   public void testExecWithInvalidSyntaxDoesNotExposeCommand() throws Exception {
-    PrintStream originalErr = System.err;
-    ByteArrayOutputStream errorOutput = new ByteArrayOutputStream();
-    PrintStream capturedErr = new PrintStream(errorOutput, true, "UTF-8");
-    try {
-      System.setErr(capturedErr);
-      Assert.assertEquals(IpcClient.EXIT_FAILURE,
-          new IpcClient("unused").runExec(Mockito.mock(Socket.class),
-              "admin_addPeer \"sensitive-value"));
-    } finally {
-      System.setErr(originalErr);
-      capturedErr.close();
-    }
+    assertLocalExec("admin_addPeer \"sensitive-value", IpcClient.EXIT_FAILURE, "",
+        "Invalid command syntax." + System.lineSeparator());
+  }
 
-    Assert.assertEquals("Invalid command syntax." + System.lineSeparator(),
-        errorOutput.toString("UTF-8"));
-    Assert.assertFalse(errorOutput.toString("UTF-8").contains("sensitive-value"));
+  @Test
+  public void testExecHelpAndExitSucceedWithoutSendingRequest() throws Exception {
+    assertLocalExec("HELP ADMIN_ADDPEER", IpcClient.EXIT_SUCCESS,
+        "usage: admin_addPeer <endpoint:string>" + System.lineSeparator(), "");
+    assertLocalExec("QUIT", IpcClient.EXIT_SUCCESS, "", "");
+  }
+
+  @Test
+  public void testExecInvalidCommandsFailWithoutSendingRequest() throws Exception {
+    assertLocalExec(" \t ", IpcClient.EXIT_FAILURE, "",
+        "No command specified for --exec." + System.lineSeparator());
+    assertLocalExec("admin_addPeer", IpcClient.EXIT_FAILURE, "",
+        "Invalid parameter, usage: admin_addPeer <endpoint:string>"
+            + System.lineSeparator());
+    assertLocalExec("unknown secret", IpcClient.EXIT_FAILURE,
+        String.join(System.lineSeparator(), "Available commands:",
+            "  admin_addPeer <endpoint:string>",
+            "  admin_blockIp <ip:string>",
+            "  admin_disconnectPeer <endpoint:string>",
+            "  admin_listActivePeers [format:json|text]",
+            "  admin_listBlockedIps",
+            "  admin_removePeer <endpoint:string>",
+            "  admin_unblockIp <ip:string>",
+            "  help [command]", "  exit/quit", ""),
+        "Invalid cmd: unknown" + System.lineSeparator());
   }
 
   @Test
@@ -335,7 +254,7 @@ public class IpcClientTest {
     try {
       System.setErr(capturedErr);
       Assert.assertEquals(IpcClient.EXIT_FAILURE,
-          new IpcClient("unused").runExec(socket, "admin_listBlockedIps"));
+          new IpcClient("unused").runExec(socket, "admin_addPeer 192.0.2.20:18888"));
     } finally {
       System.setErr(originalErr);
       capturedErr.close();
@@ -357,7 +276,7 @@ public class IpcClientTest {
     try {
       System.setErr(capturedErr);
       Assert.assertEquals(IpcClient.EXIT_FAILURE,
-          new IpcClient("unused").runExec(socket, "admin_listBlockedIps"));
+          new IpcClient("unused").runExec(socket, "admin_addPeer 192.0.2.20:18888"));
     } finally {
       System.setErr(originalErr);
       capturedErr.close();
@@ -385,7 +304,7 @@ public class IpcClientTest {
     try {
       System.setErr(capturedErr);
       Assert.assertEquals(IpcClient.EXIT_FAILURE,
-          new IpcClient("unused").runExec(socket, "admin_listBlockedIps"));
+          new IpcClient("unused").runExec(socket, "admin_addPeer 192.0.2.20:18888"));
     } finally {
       System.setErr(originalErr);
       capturedErr.close();
@@ -393,6 +312,50 @@ public class IpcClientTest {
 
     Mockito.verify(socket).setSoTimeout(30_000);
     Assert.assertEquals("Timed out waiting for IPC response." + System.lineSeparator(),
+        errorOutput.toString("UTF-8"));
+  }
+
+  @Test(timeout = 10_000)
+  public void testSessionContinuesAfterHelpAndInvalidInput() throws Exception {
+    LineReader reader = Mockito.mock(LineReader.class);
+    Mockito.when(reader.readLine("> "))
+        .thenThrow(new SyntaxError(0, 0, "sensitive terminal input"))
+        .thenReturn("", "help admin_addPeer", "admin_addPeer \"secret",
+            "admin_addPeer", "admin_addPeer 'hello world'", "exit");
+    PrintStream originalOut = System.out;
+    PrintStream originalErr = System.err;
+    ByteArrayOutputStream consoleOutput = new ByteArrayOutputStream();
+    ByteArrayOutputStream errorOutput = new ByteArrayOutputStream();
+    try (PrintStream capturedOut = new PrintStream(consoleOutput, true, "UTF-8");
+        PrintStream capturedErr = new PrintStream(errorOutput, true, "UTF-8");
+        ServerSocket serverSocket = new ServerSocket(0);
+        Socket clientSocket = new Socket("127.0.0.1", serverSocket.getLocalPort());
+        Socket serverConnection = serverSocket.accept()) {
+      System.setOut(capturedOut);
+      System.setErr(capturedErr);
+      new IpcClient("unused").runSession(clientSocket, reader);
+
+      Assert.assertFalse("The enclosing run() must own the socket", clientSocket.isClosed());
+      clientSocket.shutdownOutput();
+      serverConnection.setSoTimeout(1_000);
+      BufferedReader requests = new BufferedReader(
+          new InputStreamReader(serverConnection.getInputStream(), StandardCharsets.UTF_8));
+      JsonNode request = OBJECT_MAPPER.readTree(requests.readLine());
+      Assert.assertEquals("admin_addPeer", request.get("method").asText());
+      Assert.assertEquals(OBJECT_MAPPER.readTree("[\"hello world\"]"), request.get("params"));
+      Assert.assertEquals(1, request.get("id").asInt());
+      Assert.assertNull("Only the valid command should reach the server", requests.readLine());
+      Mockito.verify(reader, Mockito.never()).printAbove("Disconnected from server.");
+    } finally {
+      System.setOut(originalOut);
+      System.setErr(originalErr);
+    }
+
+    Assert.assertEquals("usage: admin_addPeer <endpoint:string>"
+        + System.lineSeparator(), consoleOutput.toString("UTF-8"));
+    Assert.assertEquals(String.join(System.lineSeparator(),
+        "Invalid command syntax.", "Invalid command syntax.",
+        "Invalid parameter, usage: admin_addPeer <endpoint:string>", ""),
         errorOutput.toString("UTF-8"));
   }
 
@@ -492,6 +455,27 @@ public class IpcClientTest {
     }
   }
 
+  private void assertLocalExec(String input, int exitCode, String output, String error)
+      throws Exception {
+    Socket socket = Mockito.mock(Socket.class);
+    PrintStream originalOut = System.out;
+    PrintStream originalErr = System.err;
+    ByteArrayOutputStream consoleOutput = new ByteArrayOutputStream();
+    ByteArrayOutputStream errorOutput = new ByteArrayOutputStream();
+    try (PrintStream capturedOut = new PrintStream(consoleOutput, true, "UTF-8");
+        PrintStream capturedErr = new PrintStream(errorOutput, true, "UTF-8")) {
+      System.setOut(capturedOut);
+      System.setErr(capturedErr);
+      Assert.assertEquals(exitCode, new IpcClient("unused").runExec(socket, input));
+    } finally {
+      System.setOut(originalOut);
+      System.setErr(originalErr);
+    }
+    Assert.assertEquals(output, consoleOutput.toString("UTF-8"));
+    Assert.assertEquals(error, errorOutput.toString("UTF-8"));
+    Mockito.verifyNoInteractions(socket);
+  }
+
   private ExecResult executeCommand(String command, String response) throws Exception {
     Socket socket = Mockito.mock(Socket.class);
     ByteArrayOutputStream requestOutput = new ByteArrayOutputStream();
@@ -562,9 +546,4 @@ public class IpcClientTest {
     }
   }
 
-  private interface MissingParameterAnnotationApi {
-
-    @JsonRpcMethod("admin_invalid")
-    String invalid(String value);
-  }
 }

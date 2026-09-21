@@ -1,4 +1,4 @@
-package org.tron.core.services.admin.ipc;
+package org.tron.core.services.admin.ipc.client;
 
 import java.util.List;
 import java.util.Locale;
@@ -21,15 +21,7 @@ public class IpcCommandCompleter implements Completer {
 
     for (String cmd : commands) {
       if (cmd.toLowerCase(Locale.ROOT).startsWith(buffer)) {
-        candidates.add(new Candidate(
-            cmd,
-            cmd,
-            null,
-            null,
-            null,
-            null,
-            true
-        ));
+        candidates.add(new Candidate(cmd, cmd, null, null, null, null, true));
       }
     }
   }

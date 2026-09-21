@@ -1,6 +1,5 @@
 package org.tron.core.services.admin.http;
 
-import java.net.InetAddress;
 import java.util.EnumSet;
 import javax.servlet.DispatcherType;
 import lombok.extern.slf4j.Slf4j;
@@ -31,19 +30,11 @@ public class AdminRpcHttpService extends HttpService {
 
   @Override
   public void innerStart() throws Exception {
-    if (enable && !isLoopbackListenAddress(listenAddress)) {
+    if (enable && !InetUtil.isLoopbackAddress(listenAddress)) {
       logger.warn("Admin HTTP is enabled on {} and may be accessible remotely. "
           + "Restrict access to trusted networks.", listenAddress);
     }
     super.innerStart();
-  }
-
-  static boolean isLoopbackListenAddress(String listenAddress) {
-    if (listenAddress == null) {
-      return false;
-    }
-    InetAddress address = InetUtil.resolveInetAddress(listenAddress);
-    return address != null && address.isLoopbackAddress();
   }
 
   @Override

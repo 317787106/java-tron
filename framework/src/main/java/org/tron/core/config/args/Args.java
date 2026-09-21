@@ -152,21 +152,30 @@ public class Args extends CommonParameter {
    * set parameters.
    */
   public static void setParam(final String[] args, final String confFileName) {
-    // 1. Parse CLI args into a separate object
-    CLIParameter cmd = new CLIParameter();
-    JCommander jc = JCommander.newBuilder().addObject(cmd).build();
-    jc.parse(args);
+    setParam(new CommandLineArguments(args), confFileName);
+  }
+
+  /**
+   * Reuses the options parsed by FullNode before it chooses client or node startup.
+   */
+  public static void setParam(CommandLineArguments arguments, final String confFileName) {
+    CLIParameter cmd = arguments.getParameters();
 
     if (cmd.version) {
       printVersion();
       exit(0);
     }
     if (cmd.help) {
-      Args.printHelp(jc);
+      Args.printHelp(arguments.getCommander());
       exit(0);
     }
-    List<ParameterDescription> assignedParameters = getAssignedParameters(jc);
-    if (tryApplyAttachParams(cmd, assignedParameters)) {
+    List<ParameterDescription> assignedParameters = arguments.getAssignedParameters();
+    if (arguments.isAttachMode()) {
+      ipcSocketFile = cmd.ipcSocketFile;
+      ipcExecCommand = cmd.ipcExecCommand;
+      if (StringUtils.isNotEmpty(cmd.logbackPath)) {
+        PARAMETER.logbackPath = cmd.logbackPath;
+      }
       return;
     }
 
@@ -189,47 +198,6 @@ public class Args extends CommonParameter {
 
     // 6. Init witness (depends on CLI witness flag)
     initLocalWitnesses(config, cmd);
-  }
-
-  private static List<ParameterDescription> getAssignedParameters(JCommander jc) {
-    return jc.getParameters().stream()
-        .filter(ParameterDescription::isAssigned)
-        .collect(Collectors.toList());
-  }
-
-  private static boolean tryApplyAttachParams(CLIParameter cmd,
-      List<ParameterDescription> assignedParameters) {
-    boolean attachAssigned = isParameterAssigned(assignedParameters, "ipcSocketFile");
-    if (!attachAssigned) {
-      if (isParameterAssigned(assignedParameters, "ipcExecCommand")) {
-        throwAttachParameterError("Error: --exec requires --attach <socket-path>");
-      }
-      return false;
-    }
-    if (isParameterAssigned(assignedParameters, "shellConfFileName")) {
-      throwAttachParameterError("Error: --attach cannot be combined with: --config");
-    }
-    if (StringUtils.isBlank(cmd.ipcSocketFile)) {
-      throwAttachParameterError("Error: --attach requires a non-empty <socket-path>");
-    }
-    // Node-only CLI options are irrelevant to the standalone IPC client and are ignored.
-    ipcSocketFile = cmd.ipcSocketFile;
-    ipcExecCommand = cmd.ipcExecCommand;
-    if (StringUtils.isNotEmpty(cmd.logbackPath)) {
-      PARAMETER.logbackPath = cmd.logbackPath;
-    }
-    return true;
-  }
-
-  private static void throwAttachParameterError(String message) {
-    System.err.println(message);
-    throw new TronError(message, TronError.ErrCode.PARAMETER_INIT);
-  }
-
-  private static boolean isParameterAssigned(List<ParameterDescription> assignedParameters,
-      String fieldName) {
-    return assignedParameters.stream()
-        .anyMatch(pd -> fieldName.equals(pd.getParameterized().getName()));
   }
 
   /**

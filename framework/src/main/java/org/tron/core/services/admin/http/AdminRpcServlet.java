@@ -1,16 +1,11 @@
 package org.tron.core.services.admin.http;
 
-import com.google.common.net.InetAddresses;
 import com.googlecode.jsonrpc4j.HttpStatusCodeProvider;
 import com.googlecode.jsonrpc4j.JsonRpcInterceptor;
 import com.googlecode.jsonrpc4j.JsonRpcServer;
 import com.googlecode.jsonrpc4j.ProxyUtil;
 import java.io.IOException;
 import java.util.Collections;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Locale;
-import java.util.Set;
 import javax.servlet.ServletConfig;
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletRequest;
@@ -25,6 +20,15 @@ import org.tron.core.services.jsonrpc.JsonRpcErrorResolver;
 import org.tron.core.services.jsonrpc.JsonRpcMapper;
 import org.tron.core.services.jsonrpc.JsonRpcMediaType;
 
+/**
+ * Serves the {@link AdminJsonRpc} API at {@code POST /admin} through jsonrpc4j.
+ *
+ * <p>This endpoint is intended for trusted node operators. Deployments must restrict access to
+ * loopback or a controlled management network. It intentionally does not apply the public JSON-RPC
+ * batch-size or response-size limits. HTTP request-size limits are enforced by
+ * {@link org.tron.common.application.HttpService}; JSON parser limits come from
+ * {@link JsonRpcMapper}.
+ */
 @Component
 @Slf4j(topic = "API")
 public class AdminRpcServlet extends RateLimiterServlet {
@@ -32,7 +36,8 @@ public class AdminRpcServlet extends RateLimiterServlet {
   private static final long serialVersionUID = 0L;
 
   private JsonRpcServer rpcServer = null;
-  private Set<String> virtualHosts = Collections.emptySet();
+  private VirtualHostValidator virtualHostValidator =
+      new VirtualHostValidator(Collections.emptyList());
 
   @Autowired
   private AdminJsonRpc adminJsonRpc;
@@ -40,19 +45,25 @@ public class AdminRpcServlet extends RateLimiterServlet {
   @Autowired
   private JsonRpcInterceptor interceptor;
 
+  /**
+   * Initializes the HTTP dispatcher from the Admin API and snapshots the virtual-host policy.
+   */
   @Override
   public void init(ServletConfig config) throws ServletException {
     super.init(config);
 
     ClassLoader cl = Thread.currentThread().getContextClassLoader();
+    // Expose the annotated Admin interface through the same proxy mechanism as public JSON-RPC.
     Object compositeService = ProxyUtil.createCompositeServiceProxy(cl,
         new Object[] {adminJsonRpc},
         new Class[] {AdminJsonRpc.class},
         true);
 
+    // Keep parser constraints and annotation-based error mapping consistent with the IPC transport.
     rpcServer = new JsonRpcServer(JsonRpcMapper.create(), compositeService);
     rpcServer.setErrorResolver(JsonRpcErrorResolver.INSTANCE);
 
+    // JSON-RPC result codes belong in the response body. HTTP validation below still uses 403/415.
     HttpStatusCodeProvider httpStatusCodeProvider = new HttpStatusCodeProvider() {
       @Override
       public int getHttpStatusCode(int resultCode) {
@@ -70,91 +81,26 @@ public class AdminRpcServlet extends RateLimiterServlet {
     if (CommonParameter.getInstance().isMetricsPrometheusEnable()) {
       rpcServer.setInterceptorList(Collections.singletonList(interceptor));
     }
-    virtualHosts = normalizeVirtualHosts(
+    virtualHostValidator = new VirtualHostValidator(
         CommonParameter.getInstance().getAdminHttpVirtualHosts());
   }
 
+  /**
+   * Applies HTTP-specific checks before handing request parsing and dispatch to jsonrpc4j.
+   */
   @Override
   protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws IOException {
-    if (!isAllowedHost(req.getHeader("Host"))) {
+    // Check the requested hostname before dispatch to guard against DNS rebinding.
+    if (!virtualHostValidator.isAllowedHost(req.getHeader("Host"))) {
       resp.sendError(HttpServletResponse.SC_FORBIDDEN, "Invalid Host header");
       return;
     }
+    // Require JSON media types so browser form and text/plain submissions are rejected.
     if (!JsonRpcMediaType.isSupported(req.getContentType())) {
       resp.setStatus(HttpServletResponse.SC_UNSUPPORTED_MEDIA_TYPE);
       resp.setContentLength(0);
       return;
     }
     rpcServer.handle(req, resp);
-  }
-
-  private boolean isAllowedHost(String hostHeader) {
-    if (hostHeader == null || hostHeader.isEmpty()) {
-      // A browser always sends Host. Preserve compatibility for non-browser HTTP/1.0 clients.
-      return true;
-    }
-    String host = extractHost(hostHeader);
-    if (host == null) {
-      return false;
-    }
-    if (InetAddresses.isInetAddress(host)) {
-      return true;
-    }
-    return virtualHosts.contains("*")
-        || virtualHosts.contains(host.toLowerCase(Locale.ROOT));
-  }
-
-  private String extractHost(String hostHeader) {
-    // IPv6
-    if (hostHeader.startsWith("[")) {
-      int closingBracket = hostHeader.indexOf(']');
-      if (closingBracket <= 1) {
-        return null;
-      }
-      String suffix = hostHeader.substring(closingBracket + 1);
-      if (!suffix.isEmpty() && !isPortSuffix(suffix)) {
-        return null;
-      }
-      return hostHeader.substring(1, closingBracket);
-    }
-
-    // IPv4
-    int firstColon = hostHeader.indexOf(':');
-    if (firstColon < 0) {
-      return hostHeader;
-    }
-    if (firstColon != hostHeader.lastIndexOf(':')) {
-      return hostHeader;
-    }
-    String suffix = hostHeader.substring(firstColon);
-    if (!isPortSuffix(suffix)) {
-      return null;
-    }
-    return hostHeader.substring(0, firstColon);
-  }
-
-  private boolean isPortSuffix(String suffix) {
-    if (suffix.length() <= 1 || suffix.charAt(0) != ':') {
-      return false;
-    }
-    for (int i = 1; i < suffix.length(); i++) {
-      if (!Character.isDigit(suffix.charAt(i))) {
-        return false;
-      }
-    }
-    return true;
-  }
-
-  private Set<String> normalizeVirtualHosts(List<String> configuredHosts) {
-    Set<String> normalizedHosts = new HashSet<>();
-    if (configuredHosts == null) {
-      return normalizedHosts;
-    }
-    for (String configuredHost : configuredHosts) {
-      if (configuredHost != null && !configuredHost.trim().isEmpty()) {
-        normalizedHosts.add(configuredHost.trim().toLowerCase(Locale.ROOT));
-      }
-    }
-    return normalizedHosts;
   }
 }

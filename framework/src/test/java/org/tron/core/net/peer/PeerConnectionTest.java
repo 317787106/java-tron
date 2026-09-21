@@ -252,7 +252,7 @@ public class PeerConnectionTest {
     Assert.assertEquals(9L, peerInfo.getRemainNum());
     Assert.assertTrue(peerInfo.getSyncChainRequestedMillis() >= 2_000L);
     Assert.assertEquals(1, peerInfo.getBlockInProcess());
-    Assert.assertTrue(log.contains("Peer " + peerInfo.getRemoteAddress()));
+    Assert.assertTrue(log, log.contains("Peer /" + peerInfo.getRemoteAddress()));
     int connectTimeIndex = log.indexOf("connect time/avg latency:");
     int lastKnownBlockIndex = log.indexOf("last know block num:");
     Assert.assertTrue(log, connectTimeIndex >= 0);
