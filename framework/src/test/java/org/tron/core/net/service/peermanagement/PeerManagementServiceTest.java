@@ -7,6 +7,7 @@ import java.lang.reflect.Field;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -15,6 +16,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
@@ -42,6 +44,9 @@ public class PeerManagementServiceTest {
   private static final byte[] DB_KEY_BLOCKED_IPS =
       "blocked-ips".getBytes(StandardCharsets.UTF_8);
 
+  private static final long BLOCKED_AT_MILLIS = 1_600_000_000_000L;
+  private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+
   private CommonStore commonStore;
   private P2pService p2pService;
   private PeerManagementService service;
@@ -54,9 +59,7 @@ public class PeerManagementServiceTest {
     commonStore = Mockito.mock(CommonStore.class);
     p2pService = Mockito.mock(P2pService.class);
     service = new PeerManagementService();
-    Field commonStoreField = PeerManagementService.class.getDeclaredField("commonStore");
-    commonStoreField.setAccessible(true);
-    commonStoreField.set(service, commonStore);
+    setCommonStore(service);
     Mockito.when(commonStore.get(AdditionalMatchers.aryEq(DB_KEY_BLOCKED_IPS)))
         .thenReturn(new BytesCapsule(null));
   }
@@ -72,7 +75,7 @@ public class PeerManagementServiceTest {
 
     service.configure(config, p2pService);
 
-    Assert.assertEquals(Collections.emptyList(), service.listBlockedIps());
+    Assert.assertEquals(Collections.emptyList(), listedIps());
     Assert.assertEquals(Collections.emptySet(), config.getBlockedIps());
     Mockito.verify(commonStore).get(AdditionalMatchers.aryEq(DB_KEY_BLOCKED_IPS));
     Mockito.verify(commonStore, Mockito.never()).has(Mockito.any(byte[].class));
@@ -93,8 +96,11 @@ public class PeerManagementServiceTest {
   @Test
   public void configureNormalizesDeduplicatesAndSortsBlockedIps() throws Exception {
     P2pConfig config = new P2pConfig();
-    byte[] storedValue = ("[\"2001:db8::2\",\"192.0.2.2\",\"192.0.2.2\"]")
-        .getBytes(StandardCharsets.UTF_8);
+    byte[] storedValue = OBJECT_MAPPER.writeValueAsBytes(Arrays.asList(
+        new BlockedIpInfo("2001:db8::2", BLOCKED_AT_MILLIS + 20),
+        new BlockedIpInfo("192.0.2.2", BLOCKED_AT_MILLIS + 10),
+        new BlockedIpInfo("192.0.2.2", BLOCKED_AT_MILLIS),
+        new BlockedIpInfo("2001:db8:0:0:0:0:0:2", BLOCKED_AT_MILLIS + 30)));
     Mockito.when(commonStore.get(AdditionalMatchers.aryEq(
         DB_KEY_BLOCKED_IPS)))
         .thenReturn(new BytesCapsule(storedValue));
@@ -102,7 +108,10 @@ public class PeerManagementServiceTest {
     service.configure(config, p2pService);
 
     Assert.assertEquals(Arrays.asList("192.0.2.2", "2001:db8:0:0:0:0:0:2"),
-        service.listBlockedIps());
+        listedIps());
+    Assert.assertEquals(BLOCKED_AT_MILLIS, service.listBlockedIps().get(0).getBlockedAtMillis());
+    Assert.assertEquals(BLOCKED_AT_MILLIS + 20,
+        service.listBlockedIps().get(1).getBlockedAtMillis());
     Assert.assertEquals(2, config.getBlockedIps().size());
     Assert.assertTrue(config.getBlockedIps().contains(InetAddress.getByName("192.0.2.2")));
     Assert.assertTrue(config.getBlockedIps().contains(InetAddress.getByName("2001:db8::2")));
@@ -117,7 +126,7 @@ public class PeerManagementServiceTest {
 
     service.configure(config, p2pService);
 
-    Assert.assertEquals(Collections.emptyList(), service.listBlockedIps());
+    Assert.assertEquals(Collections.emptyList(), listedIps());
     Assert.assertEquals(Collections.emptySet(), config.getBlockedIps());
     Mockito.verify(commonStore).delete(AdditionalMatchers.aryEq(
         DB_KEY_BLOCKED_IPS));
@@ -134,7 +143,7 @@ public class PeerManagementServiceTest {
 
     service.configure(config, p2pService);
 
-    Assert.assertEquals(Collections.emptyList(), service.listBlockedIps());
+    Assert.assertEquals(Collections.emptyList(), listedIps());
     Assert.assertEquals(Collections.emptySet(), config.getBlockedIps());
   }
 
@@ -177,13 +186,13 @@ public class PeerManagementServiceTest {
   }
 
   @Test
-  public void configureDeletesBlockedIpListThatExceedsLimit() {
+  public void configureDeletesBlockedIpListThatExceedsLimit() throws Exception {
     stubStoredBlockedIps(buildBlockedIpJson(PeerManagementService.MAX_BLOCKED_IPS + 1));
     P2pConfig config = new P2pConfig();
 
     service.configure(config, p2pService);
 
-    Assert.assertEquals(Collections.emptyList(), service.listBlockedIps());
+    Assert.assertEquals(Collections.emptyList(), listedIps());
     Mockito.verify(commonStore).delete(AdditionalMatchers.aryEq(DB_KEY_BLOCKED_IPS));
   }
 
@@ -209,16 +218,21 @@ public class PeerManagementServiceTest {
 
   @Test
   public void addPeerRejectsManuallyBlockedIpBeforeCallingLibp2p() throws Exception {
-    stubStoredBlockedIps("[\"192.0.2.20\"]");
+    stubStoredBlockedIps(OBJECT_MAPPER.writeValueAsString(
+        Collections.singletonList(new BlockedIpInfo("192.0.2.20", BLOCKED_AT_MILLIS))));
     configureAndInit();
 
-    try {
-      service.addPeer("192.0.2.20:18888");
-      Assert.fail("Expected a blocked active node to be rejected");
-    } catch (JsonRpcInternalException e) {
-      Assert.assertTrue(e.getMessage().contains("manually blocked"));
-    }
-    Mockito.verify(p2pService, Mockito.never()).addActiveNode(Mockito.any());
+    PeerOperationResult result = service.addPeer("192.0.2.20:18888");
+
+    Assert.assertFalse(result.isSuccess());
+    Assert.assertFalse(result.isChanged());
+    Assert.assertEquals(0, result.getDisconnectedCount());
+    Assert.assertEquals("Cannot add active node because IP 192.0.2.20 is manually blocked",
+        result.getErrorMessage());
+    Assert.assertEquals(Collections.singletonList("192.0.2.20"), listedIps());
+    Assert.assertEquals(BLOCKED_AT_MILLIS, service.listBlockedIps().get(0).getBlockedAtMillis());
+    Mockito.verifyNoInteractions(p2pService);
+    Mockito.verify(commonStore, Mockito.never()).put(Mockito.any(), Mockito.any());
   }
 
   @Test
@@ -231,9 +245,9 @@ public class PeerManagementServiceTest {
     Assert.assertFalse(addResult.isSuccess());
     Assert.assertFalse(addResult.isChanged());
     Assert.assertEquals(0, addResult.getDisconnectedCount());
-    Assert.assertTrue(addResult.getMessage().contains("node.dynamicConfig.enable"));
+    Assert.assertTrue(addResult.getErrorMessage().contains("node.dynamicConfig.enable"));
     Assert.assertFalse(removeResult.isSuccess());
-    Assert.assertEquals(addResult.getMessage(), removeResult.getMessage());
+    Assert.assertEquals(addResult.getErrorMessage(), removeResult.getErrorMessage());
     Mockito.verifyNoInteractions(p2pService);
   }
 
@@ -286,18 +300,26 @@ public class PeerManagementServiceTest {
   }
 
   @Test
-  public void blockIpRejectsNewEntryWhenLimitIsReached() throws Exception {
+  public void blockIpRejectsOnlyNewEntriesWhenLimitIsReached() throws Exception {
     stubStoredBlockedIps(buildBlockedIpJson(PeerManagementService.MAX_BLOCKED_IPS));
     configureAndInit();
+    JsonNode original = OBJECT_MAPPER.valueToTree(service.listBlockedIps());
 
-    try {
-      service.blockIp("192.0.2.20");
-      Assert.fail("Expected the blocked IP limit to be enforced");
-    } catch (JsonRpcInvalidParamsException e) {
-      Assert.assertTrue(e.getMessage().contains("limit"));
-    }
+    PeerOperationResult rejected = service.blockIp("192.0.2.20");
+    PeerOperationResult repeated = service.blockIp("2001:db8::1");
+
+    Assert.assertFalse(rejected.isSuccess());
+    Assert.assertFalse(rejected.isChanged());
+    Assert.assertEquals(0, rejected.getDisconnectedCount());
+    Assert.assertEquals("Blocked IP limit of " + PeerManagementService.MAX_BLOCKED_IPS
+        + " has been reached", rejected.getErrorMessage());
+    Assert.assertTrue(repeated.isSuccess());
+    Assert.assertFalse(repeated.isChanged());
+    Assert.assertEquals(0, repeated.getDisconnectedCount());
+    Assert.assertEquals("", repeated.getErrorMessage());
+    Assert.assertEquals(original, OBJECT_MAPPER.valueToTree(service.listBlockedIps()));
     Mockito.verify(commonStore, Mockito.never()).put(Mockito.any(), Mockito.any());
-    Mockito.verify(p2pService, Mockito.never()).replaceBlockedIps(Mockito.anySet());
+    Mockito.verifyNoInteractions(p2pService);
   }
 
   @Test
@@ -305,13 +327,16 @@ public class PeerManagementServiceTest {
     configureAndInit();
     Mockito.when(p2pService.replaceBlockedIps(Mockito.anySet())).thenReturn(2);
 
+    long before = System.currentTimeMillis();
     PeerOperationResult result = service.blockIp("2001:db8::20");
+    long after = System.currentTimeMillis();
 
     Assert.assertTrue(result.isSuccess());
     Assert.assertTrue(result.isChanged());
     Assert.assertEquals(2, result.getDisconnectedCount());
+    Assert.assertEquals("", result.getErrorMessage());
     Assert.assertEquals(Collections.singletonList("2001:db8:0:0:0:0:0:20"),
-        service.listBlockedIps());
+        listedIps());
 
     ArgumentCaptor<BytesCapsule> capsuleCaptor = ArgumentCaptor.forClass(BytesCapsule.class);
     InOrder inOrder = Mockito.inOrder(p2pService, commonStore);
@@ -320,22 +345,32 @@ public class PeerManagementServiceTest {
     inOrder.verify(commonStore).put(AdditionalMatchers.aryEq(
         DB_KEY_BLOCKED_IPS), capsuleCaptor.capture());
     JsonNode stored = new ObjectMapper().readTree(capsuleCaptor.getValue().getData());
-    Assert.assertEquals("2001:db8:0:0:0:0:0:20", stored.get(0).asText());
+    Assert.assertEquals("2001:db8:0:0:0:0:0:20", stored.get(0).get("ip").asText());
+    Assert.assertTrue(stored.get(0).get("blockedAtMillis").isIntegralNumber());
+    long blockedAtMillis = stored.get(0).get("blockedAtMillis").asLong();
+    Assert.assertTrue(blockedAtMillis >= before);
+    Assert.assertTrue(blockedAtMillis <= after);
+    Assert.assertEquals(stored, OBJECT_MAPPER.valueToTree(service.listBlockedIps()));
   }
 
   @Test
   public void repeatedBlockAndUnblockAreIdempotent() throws Exception {
-    stubStoredBlockedIps("[\"192.0.2.20\"]");
+    stubStoredBlockedIps(OBJECT_MAPPER.writeValueAsString(
+        Collections.singletonList(new BlockedIpInfo("192.0.2.20", BLOCKED_AT_MILLIS))));
     configureAndInit();
 
     PeerOperationResult blockResult = service.blockIp("192.0.2.20");
+    Assert.assertEquals(BLOCKED_AT_MILLIS, service.listBlockedIps().get(0).getBlockedAtMillis());
     PeerOperationResult firstUnblock = service.unblockIp("192.0.2.20");
     PeerOperationResult secondUnblock = service.unblockIp("192.0.2.20");
 
     Assert.assertFalse(blockResult.isChanged());
     Assert.assertTrue(firstUnblock.isChanged());
     Assert.assertFalse(secondUnblock.isChanged());
-    Assert.assertEquals(Collections.emptyList(), service.listBlockedIps());
+    Assert.assertEquals("", blockResult.getErrorMessage());
+    Assert.assertEquals("", firstUnblock.getErrorMessage());
+    Assert.assertEquals("", secondUnblock.getErrorMessage());
+    Assert.assertEquals(Collections.emptyList(), listedIps());
     Mockito.verify(commonStore, Mockito.times(1)).put(Mockito.any(), Mockito.any());
     Mockito.verify(p2pService, Mockito.times(1)).replaceBlockedIps(Collections.emptySet());
   }
@@ -353,21 +388,31 @@ public class PeerManagementServiceTest {
     } catch (JsonRpcInternalException e) {
       Assert.assertEquals("Failed to persist blocked IP snapshot", e.getMessage());
     }
-    Assert.assertEquals(Collections.emptyList(), service.listBlockedIps());
+    Assert.assertEquals(Collections.emptyList(), listedIps());
 
+    long before = System.currentTimeMillis();
     PeerOperationResult retryResult = service.blockIp("192.0.2.20");
+    long after = System.currentTimeMillis();
 
     Assert.assertTrue(retryResult.isSuccess());
     Assert.assertTrue(retryResult.isChanged());
-    Assert.assertEquals(Collections.singletonList("192.0.2.20"), service.listBlockedIps());
+    Assert.assertEquals(Collections.singletonList("192.0.2.20"), listedIps());
+    long blockedAtMillis = service.listBlockedIps().get(0).getBlockedAtMillis();
+    Assert.assertTrue(blockedAtMillis >= before);
+    Assert.assertTrue(blockedAtMillis <= after);
     Mockito.verify(p2pService, Mockito.times(2)).replaceBlockedIps(Mockito.argThat(
         addresses -> addresses.contains(InetAddresses.forString("192.0.2.20"))));
-    Mockito.verify(commonStore, Mockito.times(2)).put(Mockito.any(), Mockito.any());
+    ArgumentCaptor<BytesCapsule> stored = ArgumentCaptor.forClass(BytesCapsule.class);
+    Mockito.verify(commonStore, Mockito.times(2))
+        .put(AdditionalMatchers.aryEq(DB_KEY_BLOCKED_IPS), stored.capture());
+    Assert.assertEquals(OBJECT_MAPPER.readTree(stored.getValue().getData()),
+        OBJECT_MAPPER.valueToTree(service.listBlockedIps()));
   }
 
   @Test
   public void unblockDatabaseFailureKeepsJavaSnapshotAndAllowsRetry() throws Exception {
-    stubStoredBlockedIps("[\"192.0.2.20\"]");
+    stubStoredBlockedIps(OBJECT_MAPPER.writeValueAsString(
+        Collections.singletonList(new BlockedIpInfo("192.0.2.20", BLOCKED_AT_MILLIS))));
     configureAndInit();
     Mockito.doThrow(new IllegalStateException("write failed"))
         .doNothing()
@@ -380,13 +425,14 @@ public class PeerManagementServiceTest {
       Assert.assertEquals("Failed to persist blocked IP snapshot", e.getMessage());
     }
     Assert.assertEquals(Collections.singletonList("192.0.2.20"),
-        service.listBlockedIps());
+        listedIps());
+    Assert.assertEquals(BLOCKED_AT_MILLIS, service.listBlockedIps().get(0).getBlockedAtMillis());
 
     PeerOperationResult retryResult = service.unblockIp("192.0.2.20");
 
     Assert.assertTrue(retryResult.isSuccess());
     Assert.assertTrue(retryResult.isChanged());
-    Assert.assertEquals(Collections.emptyList(), service.listBlockedIps());
+    Assert.assertEquals(Collections.emptyList(), listedIps());
     Mockito.verify(p2pService, Mockito.times(2)).replaceBlockedIps(Collections.emptySet());
     Mockito.verify(commonStore, Mockito.times(2)).put(Mockito.any(), Mockito.any());
   }
@@ -404,7 +450,7 @@ public class PeerManagementServiceTest {
       Assert.assertEquals("Failed to apply blocked IP snapshot", e.getMessage());
     }
     Mockito.verify(commonStore, Mockito.never()).put(Mockito.any(), Mockito.any());
-    Assert.assertEquals(Collections.emptyList(), service.listBlockedIps());
+    Assert.assertEquals(Collections.emptyList(), listedIps());
   }
 
   @Test(timeout = 5_000)
@@ -422,11 +468,13 @@ public class PeerManagementServiceTest {
         return service.blockIp("192.0.2.21");
       });
 
+      long before = System.currentTimeMillis();
       start.countDown();
       Assert.assertTrue(first.get().isChanged());
       Assert.assertTrue(second.get().isChanged());
+      long after = System.currentTimeMillis();
       Assert.assertEquals(Arrays.asList("192.0.2.20", "192.0.2.21"),
-          service.listBlockedIps());
+          listedIps());
 
       ArgumentCaptor<BytesCapsule> values = ArgumentCaptor.forClass(BytesCapsule.class);
       Mockito.verify(commonStore, Mockito.times(2))
@@ -435,6 +483,11 @@ public class PeerManagementServiceTest {
       JsonNode finalStoredValue = new ObjectMapper()
           .readTree(storedValues.get(storedValues.size() - 1).getData());
       Assert.assertEquals(2, finalStoredValue.size());
+      Assert.assertEquals(finalStoredValue, OBJECT_MAPPER.valueToTree(service.listBlockedIps()));
+      for (BlockedIpInfo entry : service.listBlockedIps()) {
+        Assert.assertTrue(entry.getBlockedAtMillis() >= before);
+        Assert.assertTrue(entry.getBlockedAtMillis() <= after);
+      }
       Mockito.verify(p2pService, Mockito.times(2)).replaceBlockedIps(Mockito.anySet());
     } finally {
       executor.shutdownNow();
@@ -504,6 +557,135 @@ public class PeerManagementServiceTest {
     }
   }
 
+  @Test
+  public void repeatedBlockPreservesCreationTimeAndOldQueryResults() throws Exception {
+    stubStoredBlockedIps(OBJECT_MAPPER.writeValueAsString(
+        Collections.singletonList(new BlockedIpInfo("2001:db8::20", BLOCKED_AT_MILLIS))));
+    configureAndInit();
+    List<BlockedIpInfo> original = service.listBlockedIps();
+
+    PeerOperationResult repeated = service.blockIp("2001:db8:0:0:0:0:0:20");
+
+    Assert.assertTrue(repeated.isSuccess());
+    Assert.assertFalse(repeated.isChanged());
+    Assert.assertEquals(BLOCKED_AT_MILLIS, service.listBlockedIps().get(0).getBlockedAtMillis());
+    Mockito.verify(commonStore, Mockito.never()).put(Mockito.any(), Mockito.any());
+    Mockito.verify(p2pService, Mockito.never()).replaceBlockedIps(Mockito.anySet());
+
+    service.unblockIp("2001:db8::20");
+    long before = System.currentTimeMillis();
+    service.blockIp("2001:db8::20");
+    long after = System.currentTimeMillis();
+
+    long blockedAtMillis = service.listBlockedIps().get(0).getBlockedAtMillis();
+    Assert.assertTrue(blockedAtMillis >= before);
+    Assert.assertTrue(blockedAtMillis <= after);
+    Assert.assertNotEquals(BLOCKED_AT_MILLIS, blockedAtMillis);
+    Assert.assertEquals(BLOCKED_AT_MILLIS, original.get(0).getBlockedAtMillis());
+    original.clear();
+    Assert.assertEquals(1, service.listBlockedIps().size());
+  }
+
+  @Test
+  public void restartRestoresPersistedCreationTime() throws Exception {
+    stubStoredBlockedIps(OBJECT_MAPPER.writeValueAsString(
+        Collections.singletonList(new BlockedIpInfo("192.0.2.20", BLOCKED_AT_MILLIS))));
+    configureAndInit();
+    service.blockIp("192.0.2.21");
+    ArgumentCaptor<BytesCapsule> stored = ArgumentCaptor.forClass(BytesCapsule.class);
+    Mockito.verify(commonStore).put(AdditionalMatchers.aryEq(DB_KEY_BLOCKED_IPS), stored.capture());
+    Mockito.when(commonStore.get(AdditionalMatchers.aryEq(DB_KEY_BLOCKED_IPS)))
+        .thenReturn(new BytesCapsule(stored.getValue().getData()));
+    PeerManagementService restarted = new PeerManagementService();
+    setCommonStore(restarted);
+    P2pConfig config = new P2pConfig();
+
+    restarted.configure(config, p2pService);
+    restarted.init();
+
+    Assert.assertEquals(2, restarted.listBlockedIps().size());
+    Assert.assertEquals("192.0.2.20", restarted.listBlockedIps().get(0).getIp());
+    Assert.assertEquals(BLOCKED_AT_MILLIS, restarted.listBlockedIps().get(0).getBlockedAtMillis());
+    Assert.assertEquals(OBJECT_MAPPER.readTree(stored.getValue().getData()),
+        OBJECT_MAPPER.valueToTree(restarted.listBlockedIps()));
+    Assert.assertEquals(2, config.getBlockedIps().size());
+    Assert.assertTrue(config.getBlockedIps().containsAll(Arrays.asList(
+        InetAddresses.forString("192.0.2.20"), InetAddresses.forString("192.0.2.21"))));
+    Assert.assertFalse(restarted.blockIp("192.0.2.20").isChanged());
+    Assert.assertEquals(BLOCKED_AT_MILLIS, restarted.listBlockedIps().get(0).getBlockedAtMillis());
+    Mockito.verify(commonStore, Mockito.times(1)).put(Mockito.any(), Mockito.any());
+  }
+
+  @Test
+  public void blockRecordsCurrentEpochMillis() throws Exception {
+    configureAndInit();
+    long before = System.currentTimeMillis();
+
+    service.blockIp("192.0.2.20");
+
+    long blockedAtMillis = service.listBlockedIps().get(0).getBlockedAtMillis();
+    Assert.assertTrue(blockedAtMillis >= before);
+    Assert.assertTrue(blockedAtMillis <= System.currentTimeMillis());
+  }
+
+  @Test
+  public void invalidRecordFieldsAreRejectedWithoutPublishingPartialSnapshot() {
+    for (String entry : Arrays.asList("null", "42", "\"192.0.2.20\"", "{}",
+        "{\"ip\":\"192.0.2.20\"}",
+        "{\"ip\":\"192.0.2.20\",\"blockedAtMillis\":null}",
+        "{\"ip\":\"192.0.2.20\",\"blockedAtMillis\":\"1000\"}",
+        "{\"ip\":\"192.0.2.20\",\"blockedAtMillis\":1.5}",
+        "{\"ip\":\"192.0.2.20\",\"blockedAtMillis\":-1}",
+        "{\"ip\":\"192.0.2.20\",\"blockedAtMillis\":9223372036854775808}",
+        "{\"ip\":null,\"blockedAtMillis\":1000}",
+        "{\"ip\":1234,\"blockedAtMillis\":1000}",
+        "{\"ip\":\"peer.example\",\"blockedAtMillis\":1000}")) {
+      Mockito.clearInvocations(commonStore);
+      stubStoredBlockedIps("[{\"ip\":\"192.0.2.21\",\"blockedAtMillis\":1000}," + entry + "]");
+      P2pConfig config = new P2pConfig();
+
+      service.configure(config, p2pService);
+
+      Assert.assertTrue(entry, service.listBlockedIps().isEmpty());
+      Assert.assertTrue(entry, config.getBlockedIps().isEmpty());
+      Mockito.verify(commonStore).delete(AdditionalMatchers.aryEq(DB_KEY_BLOCKED_IPS));
+    }
+  }
+
+  @Test
+  public void maximumBlocklistWithLongIpv6AddressesFitsAndReloads() throws Exception {
+    List<BlockedIpInfo> entries = new ArrayList<>();
+    for (int i = 0; i < PeerManagementService.MAX_BLOCKED_IPS - 1; i++) {
+      entries.add(new BlockedIpInfo("ffff:ffff:ffff:ffff:ffff:ffff:ffff:"
+          + Integer.toHexString(i), Long.MAX_VALUE));
+    }
+    stubStoredBlockedIps(OBJECT_MAPPER.writeValueAsString(entries));
+    configureAndInit();
+
+    Assert.assertTrue(service.blockIp("ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff").isChanged());
+
+    ArgumentCaptor<BytesCapsule> stored = ArgumentCaptor.forClass(BytesCapsule.class);
+    Mockito.verify(commonStore).put(AdditionalMatchers.aryEq(DB_KEY_BLOCKED_IPS), stored.capture());
+    byte[] value = stored.getValue().getData();
+    Assert.assertTrue(value.length <= 1024 * 1024);
+    Mockito.when(commonStore.get(AdditionalMatchers.aryEq(DB_KEY_BLOCKED_IPS)))
+        .thenReturn(new BytesCapsule(value));
+    P2pConfig reloaded = new P2pConfig();
+    service.configure(reloaded, p2pService);
+
+    Assert.assertEquals(PeerManagementService.MAX_BLOCKED_IPS, service.listBlockedIps().size());
+    Assert.assertEquals(PeerManagementService.MAX_BLOCKED_IPS, reloaded.getBlockedIps().size());
+    Assert.assertEquals(OBJECT_MAPPER.readTree(value),
+        OBJECT_MAPPER.valueToTree(service.listBlockedIps()));
+    Mockito.verify(commonStore, Mockito.never()).delete(Mockito.any());
+  }
+
+  private void setCommonStore(PeerManagementService instance) throws Exception {
+    Field field = PeerManagementService.class.getDeclaredField("commonStore");
+    field.setAccessible(true);
+    field.set(instance, commonStore);
+  }
+
   private P2pConfig configureAndInit() {
     P2pConfig config = new P2pConfig();
     service.configure(config, p2pService);
@@ -535,15 +717,16 @@ public class PeerManagementServiceTest {
     }
   }
 
-  private String buildBlockedIpJson(int size) {
-    StringBuilder json = new StringBuilder("[");
+  private List<String> listedIps() {
+    return service.listBlockedIps().stream().map(BlockedIpInfo::getIp).collect(Collectors.toList());
+  }
+
+  private String buildBlockedIpJson(int size) throws Exception {
+    List<BlockedIpInfo> entries = new ArrayList<>(size);
     for (int i = 0; i < size; i++) {
-      if (i > 0) {
-        json.append(',');
-      }
-      json.append('"').append("2001:db8::").append(Integer.toHexString(i)).append('"');
+      entries.add(new BlockedIpInfo("2001:db8::" + Integer.toHexString(i), BLOCKED_AT_MILLIS));
     }
-    return json.append(']').toString();
+    return OBJECT_MAPPER.writeValueAsString(entries);
   }
 
   private PeerConnection mockPeer(boolean active, boolean syncFinished, String remoteAddress,

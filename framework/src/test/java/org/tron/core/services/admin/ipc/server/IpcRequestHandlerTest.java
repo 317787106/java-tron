@@ -17,6 +17,7 @@ import org.mockito.Mockito;
 import org.tron.core.Constant;
 import org.tron.core.exception.jsonrpc.JsonRpcInternalException;
 import org.tron.core.exception.jsonrpc.JsonRpcInvalidParamsException;
+import org.tron.core.net.service.peermanagement.BlockedIpInfo;
 import org.tron.core.net.service.peermanagement.PeerManagementService;
 import org.tron.core.net.service.peermanagement.PeerOperationResult;
 import org.tron.core.services.admin.AdminJsonRpc;
@@ -33,18 +34,38 @@ public class IpcRequestHandlerTest {
   @Test
   public void testHandleCommandReturnsSingleLineJsonResponse() throws Exception {
     AdminJsonRpc api = Mockito.mock(AdminJsonRpc.class);
-    Mockito.when(api.listBlockedIps()).thenReturn(Arrays.asList("a\nb", "c\rd"));
+    Mockito.when(api.addPeer("192.0.2.20:18888"))
+        .thenReturn(new PeerOperationResult(false, false, 0, "a\nb:c\rd"));
     IpcRequestHandler handler = new IpcRequestHandler(api, MAX_REQUEST_SIZE);
     String response = handler.handleCommand(
-        "{\"jsonrpc\":\"2.0\",\"method\":\"admin_listBlockedIps\","
-            + "\"params\":[],\"id\":7}");
+        "{\"jsonrpc\":\"2.0\",\"method\":\"admin_addPeer\","
+            + "\"params\":[\"192.0.2.20:18888\"],\"id\":7}");
 
     Assert.assertFalse(response, response.contains("\n"));
     Assert.assertFalse(response, response.contains("\r"));
     JsonNode result = OBJECT_MAPPER.readTree(response);
-    Assert.assertEquals(OBJECT_MAPPER.valueToTree(Arrays.asList("a\nb", "c\rd")),
-        result.get("result"));
+    Assert.assertEquals("a\nb:c\rd", result.get("result").get("errorMessage").asText());
+    Assert.assertFalse(result.get("result").get("success").asBoolean());
+    Assert.assertFalse(result.get("result").has("message"));
+    Assert.assertFalse(result.has("error"));
     Assert.assertEquals(7, result.get("id").asInt());
+  }
+
+  @Test
+  public void testBlockedIpQueryIncludesCreationTimeOverIpc() throws Exception {
+    PeerManagementService peerManagementService = Mockito.mock(PeerManagementService.class);
+    Mockito.when(peerManagementService.listBlockedIps()).thenReturn(Collections.singletonList(
+        new BlockedIpInfo("192.0.2.20", 1_790_000_000_000L)));
+    IpcRequestHandler handler = new IpcRequestHandler(
+        new AdminJsonRpcImpl(peerManagementService), MAX_REQUEST_SIZE);
+
+    JsonNode response = OBJECT_MAPPER.readTree(handler.handleCommand(
+        "{\"jsonrpc\":\"2.0\",\"method\":\"admin_listBlockedIps\",\"id\":8}"));
+
+    Assert.assertEquals(8, response.get("id").asInt());
+    Assert.assertEquals(OBJECT_MAPPER.readTree(
+        "[{\"ip\":\"192.0.2.20\",\"blockedAtMillis\":1790000000000}]"), response.get("result"));
+    Mockito.verify(peerManagementService).listBlockedIps();
   }
 
   @Test
@@ -105,13 +126,14 @@ public class IpcRequestHandlerTest {
   @Test
   public void testIpcMapperRejectsExcessiveNestingBeforeInvocation() throws Exception {
     AdminJsonRpc adminJsonRpc = Mockito.mock(AdminJsonRpc.class);
-    Mockito.when(adminJsonRpc.listBlockedIps()).thenReturn(Collections.singletonList("192.0.2.20"));
+    Mockito.when(adminJsonRpc.listBlockedIps()).thenReturn(Collections.singletonList(
+        new BlockedIpInfo("192.0.2.20", 1_790_000_000_000L)));
     IpcRequestHandler constrainedHandler = new IpcRequestHandler(adminJsonRpc, MAX_REQUEST_SIZE);
     String requestPrefix = "{\"jsonrpc\":\"2.0\",\"method\":\"admin_listBlockedIps\","
         + "\"params\":[],\"id\":11,\"extra\":";
     JsonNode valid = OBJECT_MAPPER.readTree(
         constrainedHandler.handleCommand(requestPrefix + "[0]}"));
-    Assert.assertEquals("192.0.2.20", valid.get("result").get(0).asText());
+    Assert.assertEquals("192.0.2.20", valid.get("result").get(0).get("ip").asText());
     Mockito.verify(adminJsonRpc).listBlockedIps();
     Mockito.clearInvocations(adminJsonRpc);
 
@@ -146,6 +168,8 @@ public class IpcRequestHandlerTest {
     Assert.assertTrue(result.get("success").asBoolean());
     Assert.assertTrue(result.get("changed").asBoolean());
     Assert.assertEquals(0, result.get("disconnectedCount").asInt());
+    Assert.assertEquals("", result.get("errorMessage").asText());
+    Assert.assertFalse(result.has("message"));
     Mockito.verify(peerManagementService).addPeer("192.0.2.20:18888");
   }
 

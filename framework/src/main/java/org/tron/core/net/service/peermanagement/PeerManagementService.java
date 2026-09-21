@@ -9,6 +9,8 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -42,7 +44,7 @@ public class PeerManagementService {
   private static final int MAX_ENDPOINT_LENGTH = 64;
   private static final int MAX_BLOCKED_IPS_VALUE_BYTES = 1024 * 1024;
   private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
-  private static final String DYNAMIC_CONFIG_MESSAGE =
+  private static final String DYNAMIC_CONFIG_ERROR_MESSAGE =
       "Peer modification is unavailable while node.dynamicConfig.enable is true; "
           + "update node.active in the configuration file instead.";
 
@@ -50,7 +52,7 @@ public class PeerManagementService {
   private CommonStore commonStore;
 
   private final Object managementLock = new Object();
-  private volatile List<InetAddress> blockedIps = Collections.emptyList();
+  private volatile Map<InetAddress, Long> blockedIps = Collections.emptyMap();
   private volatile P2pService p2pService;
   private volatile boolean ready;
 
@@ -59,9 +61,9 @@ public class PeerManagementService {
     this.p2pService = null;
     Objects.requireNonNull(p2pConfig, "p2pConfig must not be null");
     Objects.requireNonNull(p2pService, "p2pService must not be null");
-    List<InetAddress> loadedBlockedIps = loadBlockedIps();
+    Map<InetAddress, Long> loadedBlockedIps = loadBlockedIps();
     blockedIps = immutableCopy(loadedBlockedIps);
-    p2pConfig.setBlockedIps(new HashSet<>(loadedBlockedIps));
+    p2pConfig.setBlockedIps(new HashSet<>(loadedBlockedIps.keySet()));
     this.p2pService = p2pService;
   }
 
@@ -75,12 +77,10 @@ public class PeerManagementService {
   }
 
   /**
-   * Returns the normalized snapshot of IPs manually blocked through the Admin interface.
+   * Returns normalized IPs and their record creation times in Unix epoch milliseconds.
    */
-  public List<String> listBlockedIps() {
-    return blockedIps.stream()
-        .map(InetAddress::getHostAddress)
-        .collect(Collectors.toList());
+  public List<BlockedIpInfo> listBlockedIps() {
+    return toBlockedIpInfos(blockedIps);
   }
 
   /**
@@ -112,13 +112,13 @@ public class PeerManagementService {
   public PeerOperationResult addPeer(String endpoint)
       throws JsonRpcInvalidParamsException, JsonRpcInternalException {
     if (Args.getInstance().isDynamicConfigEnable()) {
-      return peerModificationUnavailable();
+      return operationFailed(DYNAMIC_CONFIG_ERROR_MESSAGE);
     }
     InetSocketAddress address = parseEndpoint(endpoint);
     synchronized (managementLock) {
       P2pService p2pService = requireP2pService();
-      if (blockedIps.contains(address.getAddress())) {
-        throw new JsonRpcInternalException(
+      if (blockedIps.containsKey(address.getAddress())) {
+        return operationFailed(
             "Cannot add active node because IP " + address.getAddress().getHostAddress()
                 + " is manually blocked");
       }
@@ -141,7 +141,7 @@ public class PeerManagementService {
   public PeerOperationResult removePeer(String endpoint)
       throws JsonRpcInvalidParamsException, JsonRpcInternalException {
     if (Args.getInstance().isDynamicConfigEnable()) {
-      return peerModificationUnavailable();
+      return operationFailed(DYNAMIC_CONFIG_ERROR_MESSAGE);
     }
     InetSocketAddress address = parseEndpoint(endpoint);
     synchronized (managementLock) {
@@ -182,23 +182,23 @@ public class PeerManagementService {
   }
 
   /**
-   * Persists an IP in the manual blocklist and disconnects its existing TCP connections.
+   * Persists an IP and its creation time, and disconnects its existing TCP connections.
+   * Repeated blocking preserves the original timestamp until the IP is unblocked.
    */
   public PeerOperationResult blockIp(String ip)
       throws JsonRpcInvalidParamsException, JsonRpcInternalException {
     InetAddress address = parseIp(ip);
     synchronized (managementLock) {
       P2pService p2pService = requireP2pService();
-      if (blockedIps.contains(address)) {
+      if (blockedIps.containsKey(address)) {
         return operationSucceeded(false, 0);
       }
       if (blockedIps.size() >= MAX_BLOCKED_IPS) {
-        throw new JsonRpcInvalidParamsException(
+        return operationFailed(
             "Blocked IP limit of " + MAX_BLOCKED_IPS + " has been reached");
       }
-      List<InetAddress> nextBlockedIps = new ArrayList<>(blockedIps);
-      nextBlockedIps.add(address);
-      nextBlockedIps = normalizeBlockedIps(nextBlockedIps);
+      Map<InetAddress, Long> nextBlockedIps = new HashMap<>(blockedIps);
+      nextBlockedIps.put(address, System.currentTimeMillis());
       return replaceBlockedIps(nextBlockedIps, address, true, p2pService);
     }
   }
@@ -211,26 +211,26 @@ public class PeerManagementService {
     InetAddress address = parseIp(ip);
     synchronized (managementLock) {
       P2pService p2pService = requireP2pService();
-      if (!blockedIps.contains(address)) {
+      if (!blockedIps.containsKey(address)) {
         return operationSucceeded(false, 0);
       }
-      List<InetAddress> nextBlockedIps = new ArrayList<>(blockedIps);
+      Map<InetAddress, Long> nextBlockedIps = new HashMap<>(blockedIps);
       nextBlockedIps.remove(address);
       return replaceBlockedIps(nextBlockedIps, address, false, p2pService);
     }
   }
 
-  private List<InetAddress> loadBlockedIps() {
+  private Map<InetAddress, Long> loadBlockedIps() {
     byte[] storedValue = commonStore.get(DB_KEY_BLOCKED_IPS).getData();
     if (storedValue == null) {
-      return Collections.emptyList();
+      return Collections.emptyMap();
     }
     try {
       return deserializeBlockedIps(storedValue);
     } catch (IOException e) {
       logger.warn("Invalid blocked IP data in CommonStore key blocked-ips; deleting it", e);
       deleteInvalidBlockedIps();
-      return Collections.emptyList();
+      return Collections.emptyMap();
     }
   }
 
@@ -242,29 +242,27 @@ public class PeerManagementService {
     }
   }
 
-  private PeerOperationResult replaceBlockedIps(List<InetAddress> nextBlockedIps,
+  private PeerOperationResult replaceBlockedIps(Map<InetAddress, Long> nextBlockedIps,
       InetAddress changedAddress, boolean blocked, P2pService p2pService)
       throws JsonRpcInternalException {
+    Map<InetAddress, Long> snapshot = immutableCopy(nextBlockedIps);
     int disconnectedCount;
     try {
-      disconnectedCount = p2pService.replaceBlockedIps(new HashSet<>(nextBlockedIps));
+      disconnectedCount = p2pService.replaceBlockedIps(new HashSet<>(snapshot.keySet()));
     } catch (RuntimeException e) {
       logger.error("Failed to apply blocked IP snapshot", e);
       throw new JsonRpcInternalException("Failed to apply blocked IP snapshot", e);
     }
-    saveBlockedIps(nextBlockedIps);
-    blockedIps = immutableCopy(nextBlockedIps);
+    saveBlockedIps(snapshot);
+    blockedIps = snapshot;
     logger.info("Admin {} IP {}, disconnected channels {}",
         blocked ? "blocked" : "unblocked", changedAddress.getHostAddress(), disconnectedCount);
     return operationSucceeded(true, disconnectedCount);
   }
 
-  private void saveBlockedIps(List<InetAddress> addresses) throws JsonRpcInternalException {
-    List<String> serializedAddresses = addresses.stream()
-        .map(InetAddress::getHostAddress)
-        .collect(Collectors.toList());
+  private void saveBlockedIps(Map<InetAddress, Long> snapshot) throws JsonRpcInternalException {
     try {
-      byte[] serialized = OBJECT_MAPPER.writeValueAsBytes(serializedAddresses);
+      byte[] serialized = OBJECT_MAPPER.writeValueAsBytes(toBlockedIpInfos(snapshot));
       commonStore.put(DB_KEY_BLOCKED_IPS, new BytesCapsule(serialized));
     } catch (RuntimeException | IOException e) {
       logger.error("Failed to save CommonStore key blocked-ips", e);
@@ -306,11 +304,11 @@ public class PeerManagementService {
     return new PeerOperationResult(true, changed, disconnectedCount, "");
   }
 
-  private PeerOperationResult peerModificationUnavailable() {
-    return new PeerOperationResult(false, false, 0, DYNAMIC_CONFIG_MESSAGE);
+  private PeerOperationResult operationFailed(String errorMessage) {
+    return new PeerOperationResult(false, false, 0, errorMessage);
   }
 
-  private List<InetAddress> deserializeBlockedIps(byte[] value) throws IOException {
+  private Map<InetAddress, Long> deserializeBlockedIps(byte[] value) throws IOException {
     if (value == null || value.length == 0 || value.length > MAX_BLOCKED_IPS_VALUE_BYTES) {
       throw new IOException("Invalid blocked IP value size");
     }
@@ -318,33 +316,40 @@ public class PeerManagementService {
     if (root == null || !root.isArray() || root.size() > MAX_BLOCKED_IPS) {
       throw new IOException("Invalid blocked IP value structure");
     }
-    List<InetAddress> addresses = new ArrayList<>(root.size());
+    Map<InetAddress, Long> entries = new HashMap<>();
     for (JsonNode element : root) {
-      if (!element.isTextual()) {
-        throw new IOException("Blocked IP entry must be a string");
+      if (!element.isObject()) {
+        throw new IOException("Blocked IP entry must be an object");
       }
-      String valueText = element.textValue();
+      JsonNode ip = element.get("ip");
+      JsonNode blockedAtMillis = element.get("blockedAtMillis");
+      if (ip == null || !ip.isTextual() || blockedAtMillis == null
+          || !blockedAtMillis.isIntegralNumber() || !blockedAtMillis.canConvertToLong()
+          || blockedAtMillis.longValue() < 0) {
+        throw new IOException("Invalid blocked IP record");
+      }
+      String valueText = ip.textValue();
       if (valueText == null || valueText.length() > MAX_IP_LENGTH
           || !InetAddresses.isInetAddress(valueText)) {
         throw new IOException("Invalid blocked IP entry");
       }
-      addresses.add(InetAddresses.forString(valueText));
+      // Equivalent IP spellings describe one record; retain the earliest creation time.
+      entries.merge(InetAddresses.forString(valueText), blockedAtMillis.longValue(),
+          StrictMath::min);
     }
-    return normalizeBlockedIps(addresses);
+    return entries;
   }
 
-  private List<InetAddress> normalizeBlockedIps(List<InetAddress> addresses) {
-    Map<String, InetAddress> normalized = new TreeMap<>();
-    for (InetAddress address : addresses) {
-      if (address == null) {
-        throw new IllegalArgumentException("blockedIps must not contain null");
-      }
-      normalized.put(address.getHostAddress(), address);
-    }
-    return new ArrayList<>(normalized.values());
+  private List<BlockedIpInfo> toBlockedIpInfos(Map<InetAddress, Long> snapshot) {
+    return snapshot.entrySet().stream()
+        .map(entry -> new BlockedIpInfo(entry.getKey().getHostAddress(), entry.getValue()))
+        .collect(Collectors.toList());
   }
 
-  private List<InetAddress> immutableCopy(List<InetAddress> addresses) {
-    return Collections.unmodifiableList(new ArrayList<>(addresses));
+  private Map<InetAddress, Long> immutableCopy(Map<InetAddress, Long> entries) {
+    Map<InetAddress, Long> sorted = new TreeMap<>(
+        Comparator.comparing(InetAddress::getHostAddress));
+    sorted.putAll(entries);
+    return Collections.unmodifiableMap(sorted);
   }
 }

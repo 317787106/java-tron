@@ -6,6 +6,7 @@ import org.springframework.stereotype.Component;
 import org.tron.core.exception.jsonrpc.JsonRpcInternalException;
 import org.tron.core.exception.jsonrpc.JsonRpcInvalidParamsException;
 import org.tron.core.net.service.peermanagement.ActivePeerListResult;
+import org.tron.core.net.service.peermanagement.BlockedIpInfo;
 import org.tron.core.net.service.peermanagement.PeerManagementService;
 import org.tron.core.net.service.peermanagement.PeerOperationResult;
 
@@ -55,7 +56,7 @@ public class AdminJsonRpcImpl implements AdminJsonRpc {
   }
 
   @Override
-  public List<String> listBlockedIps() {
+  public List<BlockedIpInfo> listBlockedIps() {
     return peerManagementService.listBlockedIps();
   }
 }

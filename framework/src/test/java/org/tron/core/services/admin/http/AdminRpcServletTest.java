@@ -1,6 +1,7 @@
 package org.tron.core.services.admin.http;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.mockito.Mockito.mock;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -19,6 +20,7 @@ import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.mock.web.MockServletConfig;
 import org.tron.core.Constant;
+import org.tron.core.net.service.peermanagement.BlockedIpInfo;
 import org.tron.core.net.service.peermanagement.PeerOperationResult;
 import org.tron.core.services.admin.AdminJsonRpc;
 
@@ -154,6 +156,31 @@ public class AdminRpcServletTest {
     assertEquals(HttpServletResponse.SC_OK, response.getStatus());
     assertEquals(true, result.get("success").asBoolean());
     assertEquals(true, result.get("changed").asBoolean());
+    assertEquals("", result.get("errorMessage").asText());
+    assertFalse(result.has("message"));
+    Mockito.verify(adminJsonRpc).addPeer("192.0.2.20:18888");
+  }
+
+  @Test
+  public void peerOperationFailureUsesErrorMessageOverHttp() throws Exception {
+    String errorMessage = "Peer modification is unavailable; update node.active instead.";
+    Mockito.when(adminJsonRpc.addPeer("192.0.2.20:18888"))
+        .thenReturn(new PeerOperationResult(false, false, 0, errorMessage));
+
+    MockHttpServletResponse response = doPost(
+        "{\"jsonrpc\":\"2.0\",\"method\":\"admin_addPeer\","
+            + "\"params\":[\"192.0.2.20:18888\"],\"id\":10}");
+    JsonNode responseNode = new ObjectMapper().readTree(response.getContentAsByteArray());
+    JsonNode result = responseNode.get("result");
+
+    assertEquals(HttpServletResponse.SC_OK, response.getStatus());
+    assertEquals(10, responseNode.get("id").asInt());
+    assertEquals(false, result.get("success").asBoolean());
+    assertEquals(false, result.get("changed").asBoolean());
+    assertEquals(0, result.get("disconnectedCount").asInt());
+    assertEquals(errorMessage, result.get("errorMessage").asText());
+    assertFalse(result.has("message"));
+    assertFalse(responseNode.has("error"));
     Mockito.verify(adminJsonRpc).addPeer("192.0.2.20:18888");
   }
 
@@ -161,6 +188,25 @@ public class AdminRpcServletTest {
     Field field = AdminRpcServlet.class.getDeclaredField(name);
     field.setAccessible(true);
     field.set(servlet, value);
+  }
+
+  @Test
+  public void blockedIpQueryIncludesCreationTimeOverHttp() throws Exception {
+    Mockito.when(adminJsonRpc.listBlockedIps()).thenReturn(Arrays.asList(
+        new BlockedIpInfo("192.0.2.20", 1_790_000_000_000L),
+        new BlockedIpInfo("2001:db8:0:0:0:0:0:20", 1_790_000_001_000L)));
+
+    MockHttpServletResponse response = doPost(
+        "{\"jsonrpc\":\"2.0\",\"method\":\"admin_listBlockedIps\",\"id\":9}");
+    ObjectMapper mapper = new ObjectMapper();
+    JsonNode result = mapper.readTree(response.getContentAsByteArray());
+
+    assertEquals(HttpServletResponse.SC_OK, response.getStatus());
+    assertEquals(9, result.get("id").asInt());
+    assertEquals(mapper.readTree("[{\"ip\":\"192.0.2.20\",\"blockedAtMillis\":1790000000000},"
+        + "{\"ip\":\"2001:db8:0:0:0:0:0:20\",\"blockedAtMillis\":1790000001000}]"),
+        result.get("result"));
+    Mockito.verify(adminJsonRpc).listBlockedIps();
   }
 
   private MockHttpServletResponse doPost(String body) throws Exception {

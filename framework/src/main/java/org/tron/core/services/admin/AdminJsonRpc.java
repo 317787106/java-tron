@@ -8,6 +8,7 @@ import java.util.List;
 import org.tron.core.exception.jsonrpc.JsonRpcInternalException;
 import org.tron.core.exception.jsonrpc.JsonRpcInvalidParamsException;
 import org.tron.core.net.service.peermanagement.ActivePeerListResult;
+import org.tron.core.net.service.peermanagement.BlockedIpInfo;
 import org.tron.core.net.service.peermanagement.PeerOperationResult;
 
 public interface AdminJsonRpc {
@@ -56,5 +57,5 @@ public interface AdminJsonRpc {
       throws JsonRpcInvalidParamsException, JsonRpcInternalException;
 
   @JsonRpcMethod("admin_listBlockedIps")
-  List<String> listBlockedIps();
+  List<BlockedIpInfo> listBlockedIps();
 }

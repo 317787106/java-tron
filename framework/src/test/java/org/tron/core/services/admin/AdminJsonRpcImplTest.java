@@ -1,11 +1,13 @@
 package org.tron.core.services.admin;
 
-import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 import org.mockito.Mockito;
 import org.tron.core.net.service.peermanagement.ActivePeerListResult;
+import org.tron.core.net.service.peermanagement.BlockedIpInfo;
 import org.tron.core.net.service.peermanagement.PeerManagementService;
 import org.tron.core.net.service.peermanagement.PeerOperationResult;
 
@@ -33,8 +35,9 @@ public class AdminJsonRpcImplTest {
     Mockito.when(peerManagementService.listActivePeers()).thenReturn(activePeers);
     Mockito.when(peerManagementService.blockIp("192.0.2.20")).thenReturn(blockedIpResult);
     Mockito.when(peerManagementService.unblockIp("192.0.2.20")).thenReturn(blockedIpResult);
-    Mockito.when(peerManagementService.listBlockedIps())
-        .thenReturn(Arrays.asList("192.0.2.20"));
+    List<BlockedIpInfo> blockedIps = Collections.singletonList(
+        new BlockedIpInfo("192.0.2.20", 1_790_000_000_000L));
+    Mockito.when(peerManagementService.listBlockedIps()).thenReturn(blockedIps);
 
     Assert.assertSame(peerResult, adminJsonRpc.addPeer("192.0.2.20:18888"));
     Assert.assertSame(peerResult, adminJsonRpc.removePeer("192.0.2.20:18888"));
@@ -42,6 +45,6 @@ public class AdminJsonRpcImplTest {
     Assert.assertSame(activePeers, adminJsonRpc.listActivePeers());
     Assert.assertSame(blockedIpResult, adminJsonRpc.blockIp("192.0.2.20"));
     Assert.assertSame(blockedIpResult, adminJsonRpc.unblockIp("192.0.2.20"));
-    Assert.assertEquals(Arrays.asList("192.0.2.20"), adminJsonRpc.listBlockedIps());
+    Assert.assertSame(blockedIps, adminJsonRpc.listBlockedIps());
   }
 }
