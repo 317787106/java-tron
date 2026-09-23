@@ -336,8 +336,16 @@ public class SyncService {
     BlockId blockId = block.getBlockId();
     try {
       tronNetDelegate.validSignature(block);
+      boolean useful = block.getNum() >= tronNetDelegate.getHeadBlockId().getNum()
+          && !tronNetDelegate.containBlock(blockId);
       tronNetDelegate.processBlock(block, true);
-      peerConnection.setBlockRcvTime(System.currentTimeMillis());
+      if (tronNetDelegate.isHitDown()) {
+        return;
+      }
+      peerConnection.setLastInteractiveTime(System.currentTimeMillis());
+      if (useful) {
+        peerConnection.setBlockRcvTime(System.currentTimeMillis());
+      }
       pbftDataSyncHandler.processPBFTCommitData(block);
     } catch (P2pException p2pException) {
       logger.error("Process sync block {} failed, type: {}",
@@ -366,7 +374,7 @@ public class SyncService {
             syncNext(peer);
           }
         } else {
-          peer.disconnect(ReasonCode.BAD_BLOCK);
+          peer.disconnect(ReasonCode.SYNC_FAIL);
         }
       }
     }
