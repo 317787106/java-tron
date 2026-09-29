@@ -262,7 +262,7 @@ public class P2pEventHandlerImpl extends P2pEventHandler {
         break;
     }
     if (flag) {
-      peer.setLastInteractiveTime(System.currentTimeMillis());
+      peer.updateLastInteractiveTime(System.currentTimeMillis());
     }
   }
 

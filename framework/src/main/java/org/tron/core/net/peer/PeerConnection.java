@@ -122,6 +122,11 @@ public class PeerConnection {
   private Cache<Item, Long> advInvReceive = CacheBuilder.newBuilder().maximumSize(invCacheSize)
       .expireAfterWrite(1, TimeUnit.HOURS).recordStats().build();
 
+  // Eligible block INV receipt times, pending successful block processing before activity updates.
+  @Getter
+  private Cache<Item, Long> advBlockInvReceive = CacheBuilder.newBuilder().maximumSize(100)
+      .expireAfterWrite(1, TimeUnit.MINUTES).build();
+
   @Setter
   @Getter
   private Cache<Item, Long> advInvSpread = CacheBuilder.newBuilder().maximumSize(invCacheSize)
@@ -175,7 +180,7 @@ public class PeerConnection {
       this.isRelayPeer = true;
     }
     this.nodeStatistics = TronStatsManager.getNodeStatistics(channel.getInetAddress());
-    lastInteractiveTime = System.currentTimeMillis();
+    updateLastInteractiveTime(System.currentTimeMillis());
     p2pRateLimiter.register(SYNC_BLOCK_CHAIN.asByte(),
         Args.getInstance().getRateLimiterSyncBlockChain());
     p2pRateLimiter.register(FETCH_INV_DATA.asByte(),
@@ -187,6 +192,12 @@ public class PeerConnection {
   public void setBlockBothHave(BlockId blockId) {
     this.blockBothHave = blockId;
     this.blockBothHaveUpdateTime = System.currentTimeMillis();
+  }
+
+  public synchronized void updateLastInteractiveTime(long time) {
+    if (time > lastInteractiveTime) {
+      lastInteractiveTime = time;
+    }
   }
 
   public boolean isIdle() {
@@ -225,6 +236,7 @@ public class PeerConnection {
     syncService.onDisconnect(this);
     advService.onDisconnect(this);
     advInvReceive.invalidateAll();
+    advBlockInvReceive.invalidateAll();
     advInvSpread.invalidateAll();
     advInvRequest.clear();
     syncBlockIdCache.invalidateAll();
