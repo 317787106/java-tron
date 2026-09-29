@@ -152,6 +152,9 @@ public class BlockMsgHandler implements TronMsgHandler {
 
     try {
       tronNetDelegate.processBlock(block, false);
+      if (!tronNetDelegate.isHitDown()) {
+        advService.confirmBlockInventory(blockId);
+      }
       peer.setBlockRcvTime(System.currentTimeMillis());
       witnessProductBlockService.validWitnessProductTwoBlock(block);
 
