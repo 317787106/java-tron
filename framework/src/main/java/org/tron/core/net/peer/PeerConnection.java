@@ -10,7 +10,6 @@ import com.google.protobuf.ByteString;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.util.Deque;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -158,7 +157,7 @@ public class PeerConnection {
   private volatile Pair<Deque<BlockId>, Long> syncChainRequested = null;
   @Setter
   @Getter
-  private Set<BlockId> syncBlockInProcess = new HashSet<>();
+  private Set<BlockId> syncBlockInProcess = ConcurrentHashMap.newKeySet();
   @Setter
   @Getter
   private volatile boolean needSyncFromPeer = true;
@@ -189,10 +188,33 @@ public class PeerConnection {
     this.blockBothHaveUpdateTime = System.currentTimeMillis();
   }
 
+  /**
+   * Returns whether there are no outstanding inventory or sync requests.
+   *
+   * <p>Sync blocks already being processed and sync direction flags are not checked.
+   */
   public boolean isIdle() {
     return advInvRequest.isEmpty() && isSyncIdle();
   }
 
+  /**
+   * Returns whether there are no outstanding block or sync requests and no sync blocks
+   * being processed. Outstanding transaction inventory requests do not make this check fail.
+   *
+   * <p>Callers must check connection state and sync direction flags separately before fetching.
+   */
+  public boolean isBlockFetchIdle() {
+    return advInvRequest.keySet().stream()
+        .noneMatch(item -> item.getType() == Protocol.Inventory.InventoryType.BLOCK)
+        && isSyncIdle() && syncBlockInProcess.isEmpty();
+  }
+
+  /**
+   * Returns whether there are no outstanding sync block or chain-summary requests.
+   *
+   * <p>This does not mean synchronization is complete: received blocks may still be processing,
+   * and sync direction flags are not checked.
+   */
   public boolean isSyncIdle() {
     return syncBlockRequested.isEmpty() && syncChainRequested == null;
   }
