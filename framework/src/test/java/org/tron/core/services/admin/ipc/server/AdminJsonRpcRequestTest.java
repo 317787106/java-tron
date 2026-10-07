@@ -20,6 +20,7 @@ import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.mock.web.MockServletConfig;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.tron.core.exception.jsonrpc.JsonRpcInvalidParamsException;
+import org.tron.core.net.service.peermanagement.PeerOperationResult;
 import org.tron.core.services.admin.AdminJsonRpc;
 import org.tron.core.services.admin.AdminJsonRpcRequestHandler;
 import org.tron.core.services.admin.http.AdminRpcServlet;
@@ -32,8 +33,10 @@ public class AdminJsonRpcRequestTest {
 
   private static final ObjectMapper MAPPER = new ObjectMapper()
       .enable(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS);
-  private static final String REQUEST = "{\"jsonrpc\":\"2.0\",\"method\":\"admin_example\","
-      + "\"params\":[\"a\",\"b\"]";
+  private static final String ENDPOINT = "192.0.2.20:18888";
+  private static final String PARAMS = "[\"" + ENDPOINT + "\"]";
+  private static final String REQUEST = "{\"jsonrpc\":\"2.0\",\"method\":\"admin_addPeer\","
+      + "\"params\":" + PARAMS;
 
   private final boolean http;
   private AdminJsonRpc adminJsonRpc;
@@ -52,7 +55,8 @@ public class AdminJsonRpcRequestTest {
   @Before
   public void setUp() throws Exception {
     adminJsonRpc = Mockito.mock(AdminJsonRpc.class);
-    Mockito.when(adminJsonRpc.adminExample("a", "b")).thenReturn("a:b");
+    Mockito.when(adminJsonRpc.addPeer(ENDPOINT))
+        .thenReturn(new PeerOperationResult(true, true, 0, ""));
     if (http) {
       AdminRpcServlet servlet = new AdminRpcServlet();
       ReflectionTestUtils.setField(servlet, "adminJsonRpc", adminJsonRpc);
@@ -106,9 +110,9 @@ public class AdminJsonRpcRequestTest {
         "0.12345678901234567890123456789", "9223372036854775807.0", "-0.5", "1e-20"}) {
       JsonNode response = parse(sender.send(REQUEST + ",\"id\":" + id + "}"));
       assertId(id, response.get("id"));
-      Assert.assertEquals("a:b", response.path("result").asText());
+      Assert.assertTrue(response.path("result").path("success").asBoolean());
       Assert.assertFalse(response.has("error"));
-      Mockito.verify(adminJsonRpc).adminExample("a", "b");
+      Mockito.verify(adminJsonRpc).addPeer(ENDPOINT);
       Mockito.clearInvocations(adminJsonRpc);
     }
   }
@@ -119,7 +123,7 @@ public class AdminJsonRpcRequestTest {
       assertError(sender.send(REQUEST.replace("\"2.0\"", version) + ",\"id\":7}"),
           -32600, "7");
     }
-    assertError(sender.send("{\"method\":\"admin_example\",\"params\":[\"a\",\"b\"],\"id\":7}"),
+    assertError(sender.send("{\"method\":\"admin_addPeer\",\"params\":" + PARAMS + ",\"id\":7}"),
         -32600, "7");
     Mockito.verifyNoInteractions(adminJsonRpc);
   }
@@ -127,7 +131,7 @@ public class AdminJsonRpcRequestTest {
   @Test
   public void invalidMethodsAreRejectedBeforeInvocation() throws Exception {
     for (String method : new String[] {"7", "null", "true", "{}", "[]"}) {
-      assertError(sender.send(REQUEST.replace("\"admin_example\"", method) + ",\"id\":7}"),
+      assertError(sender.send(REQUEST.replace("\"admin_addPeer\"", method) + ",\"id\":7}"),
           -32600, "7");
     }
     assertError(sender.send("{\"jsonrpc\":\"2.0\",\"id\":7}"), -32600, "7");
@@ -137,7 +141,7 @@ public class AdminJsonRpcRequestTest {
   @Test
   public void scalarParamsAreRejectedBeforeInvocation() throws Exception {
     for (String params : new String[] {"\"text\"", "null", "7", "true"}) {
-      assertError(sender.send(REQUEST.replace("[\"a\",\"b\"]", params) + ",\"id\":7}"),
+      assertError(sender.send(REQUEST.replace(PARAMS, params) + ",\"id\":7}"),
           -32600, "7");
     }
     Mockito.verifyNoInteractions(adminJsonRpc);
@@ -154,7 +158,7 @@ public class AdminJsonRpcRequestTest {
   @Test
   public void invalidRequestsWithoutIdAreNotTreatedAsNotifications() throws Exception {
     for (String body : new String[] {"{}", REQUEST.replace("2.0", "3.0") + "}",
-        REQUEST.replace("[\"a\",\"b\"]", "\"text\"") + "}"}) {
+        REQUEST.replace(PARAMS, "\"text\"") + "}"}) {
       assertError(sender.send(body), -32600, "null");
     }
     Mockito.verifyNoInteractions(adminJsonRpc);
@@ -163,41 +167,41 @@ public class AdminJsonRpcRequestTest {
   @Test
   public void successfulNotificationHasNoResponse() throws Exception {
     Assert.assertEquals("", sender.send(REQUEST + "}"));
-    Mockito.verify(adminJsonRpc).adminExample("a", "b");
+    Mockito.verify(adminJsonRpc).addPeer(ENDPOINT);
   }
 
   @Test
   public void unknownMethodNotificationHasNoResponse() throws Exception {
-    Assert.assertEquals("", sender.send(REQUEST.replace("admin_example", "admin_missing") + "}"));
+    Assert.assertEquals("", sender.send(REQUEST.replace("admin_addPeer", "admin_missing") + "}"));
     Mockito.verifyNoInteractions(adminJsonRpc);
   }
 
   @Test
   public void invalidMethodParamsNotificationHasNoResponse() throws Exception {
-    Assert.assertEquals("", sender.send(REQUEST.replace("[\"a\",\"b\"]", "[]") + "}"));
+    Assert.assertEquals("", sender.send(REQUEST.replace(PARAMS, "[]") + "}"));
     Mockito.verifyNoInteractions(adminJsonRpc);
   }
 
   @Test
   public void businessErrorNotificationHasNoResponse() throws Exception {
-    Mockito.when(adminJsonRpc.adminExample("a", "b"))
+    Mockito.when(adminJsonRpc.addPeer(ENDPOINT))
         .thenThrow(new JsonRpcInvalidParamsException("Invalid admin parameters"));
     Assert.assertEquals("", sender.send(REQUEST + "}"));
-    Mockito.verify(adminJsonRpc).adminExample("a", "b");
+    Mockito.verify(adminJsonRpc).addPeer(ENDPOINT);
   }
 
   @Test
   public void errorResponsesRetainAcceptedIds() throws Exception {
-    Mockito.when(adminJsonRpc.adminExample("a", "b"))
+    Mockito.when(adminJsonRpc.addPeer(ENDPOINT))
         .thenThrow(new JsonRpcInvalidParamsException("Invalid admin parameters"));
     for (String id : new String[] {"null", "\"null\"", "9223372036854775807",
         "0.12345678901234567890123456789"}) {
       JsonNode response = assertError(sender.send(REQUEST + ",\"id\":" + id + "}"), -32602, id);
       Assert.assertEquals("Invalid admin parameters", response.path("error").path("message")
           .asText());
-      Mockito.verify(adminJsonRpc).adminExample("a", "b");
+      Mockito.verify(adminJsonRpc).addPeer(ENDPOINT);
       Mockito.clearInvocations(adminJsonRpc);
-      assertError(sender.send(REQUEST.replace("admin_example", "admin_missing")
+      assertError(sender.send(REQUEST.replace("admin_addPeer", "admin_missing")
           + ",\"id\":" + id + "}"), -32601, id);
       Mockito.verifyNoInteractions(adminJsonRpc);
     }
@@ -222,11 +226,12 @@ public class AdminJsonRpcRequestTest {
 
   @Test
   public void namedAndOmittedParamsRetainDispatchBehavior() throws Exception {
-    String named = REQUEST.replace("[\"a\",\"b\"]", "{\"param1\":\"a\",\"param2\":\"b\"}");
-    Assert.assertEquals("a:b", parse(sender.send(named + ",\"id\":7}")).path("result").asText());
-    Mockito.verify(adminJsonRpc).adminExample("a", "b");
+    String named = REQUEST.replace(PARAMS, "{\"endpoint\":\"" + ENDPOINT + "\"}");
+    Assert.assertTrue(parse(sender.send(named + ",\"id\":7}"))
+        .path("result").path("success").asBoolean());
+    Mockito.verify(adminJsonRpc).addPeer(ENDPOINT);
     Mockito.clearInvocations(adminJsonRpc);
-    assertError(sender.send("{\"jsonrpc\":\"2.0\",\"method\":\"admin_example\",\"id\":7}"),
+    assertError(sender.send("{\"jsonrpc\":\"2.0\",\"method\":\"admin_addPeer\",\"id\":7}"),
         -32602, "7");
     Mockito.verifyNoInteractions(adminJsonRpc);
   }
