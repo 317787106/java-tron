@@ -16,6 +16,7 @@ import org.tron.common.parameter.CommonParameter;
 import org.tron.common.utils.Sha256Hash;
 import org.tron.core.ChainBaseManager;
 import org.tron.core.capsule.BlockCapsule;
+import org.tron.core.config.Parameter.NetConstants;
 import org.tron.core.metrics.MetricsKey;
 import org.tron.core.metrics.MetricsUtil;
 import org.tron.core.net.TronNetDelegate;
@@ -88,17 +89,23 @@ public class FetchBlockService {
     this.fetchBlockInfo = null;
   }
 
+  public boolean canFetchBlock(PeerConnection peer, Item item, long now) {
+    if (peer.isDisconnect() || peer.isNeedSyncFromPeer() || peer.isNeedSyncFromUs()
+        || !peer.isBlockFetchIdle()) {
+      return false;
+    }
+    Long received = peer.getAdvInvReceive().getIfPresent(item);
+    return received != null && received >= now - NetConstants.ADV_TIME_OUT;
+  }
+
   private void fetchBlockProcess(FetchBlockInfo fetchBlock) {
     if (null == fetchBlock) {
       return;
     }
+    long now = System.currentTimeMillis();
     Item item = new Item(fetchBlock.getHash(), InventoryType.BLOCK);
     Optional<PeerConnection> optionalPeerConnection = tronNetDelegate.getActivePeer().stream()
-        .filter(PeerConnection::isIdle)
-        .filter(filterPeer -> !filterPeer.equals(fetchBlock.getPeer()))
-        .filter(filterPeer -> filterPeer.getAdvInvReceive().getIfPresent(item) != null)
-        .filter(filterPeer -> getPeerTop75(filterPeer)
-            <= CommonParameter.getInstance().fetchBlockTimeout)
+        .filter(peer -> canFetchBlock(peer, item, now))
         .min(Comparator.comparingDouble(this::getPeerTop75));
 
     if (optionalPeerConnection.isPresent()) {
@@ -123,7 +130,7 @@ public class FetchBlockService {
     double newPeerTop75 = getPeerTop75(newPeer);
     double oldPeerTop75 = getPeerTop75(fetchBlock.getPeer());
     long oldPeerSpendTime = System.currentTimeMillis() - fetchBlock.getTime();
-    if (oldPeerTop75 > fetchTimeOut || oldPeerSpendTime >= fetchTimeOut) {
+    if (oldPeerSpendTime >= fetchTimeOut) {
       return true;
     }
 
