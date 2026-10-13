@@ -120,6 +120,15 @@ jobs:
 
     container:
       image: rockylinux:8
+      # Bound each core to 4 GiB. Expose only the core-pattern sysctl on this
+      # disposable hosted runner; no privileged container is needed.
+      options: --ulimit core=4294967296:4294967296
+      volumes:
+        - /proc/sys/kernel/core_pattern:/ci-core-pattern
+
+    defaults:
+      run:
+        shell: bash
 
     env:
       GRADLE_USER_HOME: /github/home/.gradle
@@ -128,13 +137,21 @@ jobs:
 
     steps:
       - name: Install dependencies (Rocky 8 + JDK8)
+        timeout-minutes: 10
         run: |
           set -euxo pipefail
-          dnf -y install java-1.8.0-openjdk-devel git wget unzip which jq bc curl glibc-langpack-en
+          # Share a 50-minute budget from setup onward; reserve time for diagnostics.
+          echo "CI_BUILD_DEADLINE=$(( $(date +%s) + 3000 ))" >> "$GITHUB_ENV"
+          echo "CI_NATIVE_DIAGNOSTICS_DIR=$RUNNER_TEMP/java-tron-native" >> "$GITHUB_ENV"
+          dnf -y install java-1.8.0-openjdk-devel git wget unzip which jq bc curl glibc-langpack-en gdb binutils
           dnf -y groupinstall "Development Tools"
 
       - name: Checkout code
         uses: actions/checkout@v5
+
+      - name: Prepare and verify native crash diagnostics
+        timeout-minutes: 1
+        run: bash .github/scripts/ci-native-diagnostics.sh prepare
 
       - name: Check Java version
         run: java -version
@@ -150,27 +167,34 @@ jobs:
             rockylinux-x86_64-gradle-
 
       - name: Stop Gradle daemon
-        run: ./gradlew --stop || true
+        run: bash .github/scripts/ci-native-diagnostics.sh run ./gradlew --stop || true
 
       - name: Build
         # Bound worker concurrency while retaining parallelism within the 60-minute job limit.
         # Execute tests on every retry instead of restoring their outputs from the build cache.
-        run: ./gradlew clean build --no-daemon --max-workers=2 --rerun-tasks --info --stacktrace
+        run: bash .github/scripts/ci-native-diagnostics.sh run ./gradlew clean build --no-daemon --max-workers=2 --rerun-tasks --info --stacktrace
 
       - name: Toolkit jar smoke test
         run: |
           set -e
           JAR=plugins/build/libs/Toolkit.jar
-          java -jar "$JAR" help
-          java -jar "$JAR" db --help
-          java -jar "$JAR" db archive -h
-          java -jar "$JAR" keystore --help
+          bash .github/scripts/ci-native-diagnostics.sh run java -jar "$JAR" help
+          bash .github/scripts/ci-native-diagnostics.sh run java -jar "$JAR" db --help
+          bash .github/scripts/ci-native-diagnostics.sh run java -jar "$JAR" db archive -h
+          bash .github/scripts/ci-native-diagnostics.sh run java -jar "$JAR" keystore --help
 
       - name: Test with RocksDB engine
-        run: ./gradlew :framework:testWithRocksDb --no-daemon --max-workers=2 --rerun-tasks --info --stacktrace
+        run: bash .github/scripts/ci-native-diagnostics.sh run ./gradlew :framework:testWithRocksDb --no-daemon --max-workers=2 --rerun-tasks --info --stacktrace
+
+      - name: Collect native crash diagnostics
+        id: native-diagnostics
+        if: always()
+        timeout-minutes: 3
+        run: bash .github/scripts/ci-native-diagnostics.sh collect
 
       - name: Upload test diagnostics
-        if: failure()
+        if: failure() || steps.native-diagnostics.outputs.has-cores == 'true'
+        timeout-minutes: 4
         uses: ./.github/actions/upload-test-diagnostics
 
   docker-build-debian11:
@@ -181,6 +205,11 @@ jobs:
 
     container:
       image: eclipse-temurin:8-jdk # base image is Debian 11 (Bullseye)
+      # Bound each core to 4 GiB. Expose only the core-pattern sysctl on this
+      # disposable hosted runner; no privileged container is needed.
+      options: --ulimit core=4294967296:4294967296
+      volumes:
+        - /proc/sys/kernel/core_pattern:/ci-core-pattern
 
     defaults:
       run:
@@ -191,13 +220,21 @@ jobs:
 
     steps:
       - name: Install dependencies (Debian + build tools)
+        timeout-minutes: 10
         run: |
           set -euxo pipefail
+          # Share a 50-minute budget from setup onward; reserve time for diagnostics.
+          echo "CI_BUILD_DEADLINE=$(( $(date +%s) + 3000 ))" >> "$GITHUB_ENV"
+          echo "CI_NATIVE_DIAGNOSTICS_DIR=$RUNNER_TEMP/java-tron-native" >> "$GITHUB_ENV"
           apt-get update
-          apt-get install -y git wget unzip build-essential curl jq
+          apt-get install -y git wget unzip build-essential curl jq gdb binutils
 
       - name: Checkout code
         uses: actions/checkout@v5
+
+      - name: Prepare and verify native crash diagnostics
+        timeout-minutes: 1
+        run: bash .github/scripts/ci-native-diagnostics.sh prepare
 
       - name: Check Java version
         run: java -version
@@ -213,24 +250,26 @@ jobs:
             debian11-x86_64-gradle-
 
       - name: Build
-        run: ./gradlew clean build --no-daemon
+        # clean does not prevent restoring cached test results.
+        run: bash .github/scripts/ci-native-diagnostics.sh run ./gradlew clean build --no-daemon --no-build-cache --info --stacktrace
 
       - name: Toolkit jar smoke test
         run: |
           set -e
           JAR=plugins/build/libs/Toolkit.jar
-          java -jar "$JAR" help
-          java -jar "$JAR" db --help
-          java -jar "$JAR" db archive -h
-          java -jar "$JAR" keystore --help
+          bash .github/scripts/ci-native-diagnostics.sh run java -jar "$JAR" help
+          bash .github/scripts/ci-native-diagnostics.sh run java -jar "$JAR" db --help
+          bash .github/scripts/ci-native-diagnostics.sh run java -jar "$JAR" db archive -h
+          bash .github/scripts/ci-native-diagnostics.sh run java -jar "$JAR" keystore --help
 
       - name: Test with RocksDB engine
-        run: ./gradlew :framework:testWithRocksDb --no-daemon
+        run: bash .github/scripts/ci-native-diagnostics.sh run ./gradlew :framework:testWithRocksDb --no-daemon --no-build-cache --info --stacktrace
 
       - name: Generate module coverage reports
-        run: ./gradlew jacocoTestReport --no-daemon
+        run: bash .github/scripts/ci-native-diagnostics.sh run ./gradlew jacocoTestReport --no-daemon
 
       - name: Upload PR coverage reports
+        timeout-minutes: 2
         uses: actions/upload-artifact@v6
         with:
           name: jacoco-coverage-pr
@@ -238,8 +277,15 @@ jobs:
             **/build/reports/jacoco/test/jacocoTestReport.xml
           if-no-files-found: error
 
+      - name: Collect native crash diagnostics
+        id: native-diagnostics
+        if: always()
+        timeout-minutes: 3
+        run: bash .github/scripts/ci-native-diagnostics.sh collect
+
       - name: Upload test diagnostics
-        if: failure()
+        if: failure() || steps.native-diagnostics.outputs.has-cores == 'true'
+        timeout-minutes: 4
         uses: ./.github/actions/upload-test-diagnostics
 
   coverage-base:

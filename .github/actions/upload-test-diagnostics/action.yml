@@ -1,5 +1,5 @@
 name: Upload test diagnostics
-description: Preserve test reports, application logs, and JVM crash reports after a failed build.
+description: Preserve test reports, application logs, JVM crash reports, and native backtraces after a failed build.
 
 runs:
   using: composite
@@ -31,6 +31,7 @@ runs:
           **/build/reports/tests/**
           **/logs/tron-test*.log*
           **/hs_err_pid*.log
+          ${{ runner.temp }}/java-tron-native/reports/**
         if-no-files-found: warn
         retention-days: 7
         compression-level: 1

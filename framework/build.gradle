@@ -140,6 +140,11 @@ def configureTestTask = { Task t ->
         // Keep fatal test-JVM diagnostics in the task output directory for CI artifacts.
         t.jvmArgs "-XX:ErrorFile=${t.temporaryDir}/hs_err_pid%p.log"
     }
+    def nativeDiagnosticsDir = System.getenv('CI_NATIVE_DIAGNOSTICS_DIR')
+    if (nativeDiagnosticsDir) {
+        // Keep extracted JNI libraries after an abort so GDB can resolve native frames.
+        t.systemProperty 'java.io.tmpdir', "${nativeDiagnosticsDir}/jni"
+    }
     t.systemProperty 'runPrecompileBenchmark',
             System.getProperty('runPrecompileBenchmark', 'false')
     t.doFirst {
