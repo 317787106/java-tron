@@ -691,8 +691,9 @@ public class TransactionCapsule implements ProtoCapsule<Transaction> {
 
   private void setRawData(Transaction.raw rawData) {
     this.transaction = this.transaction.toBuilder().setRawData(rawData).build();
-    // invalidate trxId
+    // Cached identity and signature verification are bound to raw_data.
     this.id = null;
+    this.isVerified = false;
   }
 
   @Override

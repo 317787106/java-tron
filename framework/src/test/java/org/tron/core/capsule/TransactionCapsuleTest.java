@@ -8,6 +8,7 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
+import com.google.protobuf.Any;
 import com.google.protobuf.ByteString;
 import java.math.BigInteger;
 import java.security.SignatureException;
@@ -42,6 +43,7 @@ import org.tron.protos.Protocol.Transaction.Contract.ContractType;
 import org.tron.protos.Protocol.Transaction.Result;
 import org.tron.protos.Protocol.Transaction.Result.contractResult;
 import org.tron.protos.Protocol.Transaction.raw;
+import org.tron.protos.contract.BalanceContract.TransferContract;
 
 @Slf4j
 public class TransactionCapsuleTest extends BaseTest {
@@ -75,6 +77,37 @@ public class TransactionCapsuleTest extends BaseTest {
     trxCap.setResultCode(contractResult);
     Assert.assertEquals(trxCap.getInstance()
         .getRet(0).getContractRet(), Result.contractResult.OUT_OF_TIME);
+  }
+
+  @Test
+  public void shouldRevalidateSignatureAfterRawDataMutation() throws Exception {
+    ECKey ownerKey = ECKey.fromPrivate(BigInteger.TEN);
+    ECKey receiverKey = ECKey.fromPrivate(BigInteger.ONE);
+    AccountCapsule owner = new AccountCapsule(ByteString.copyFromUtf8("cache-owner"),
+        ByteString.copyFrom(ownerKey.getAddress()), AccountType.Normal, 10_000_000_000L);
+    dbManager.getAccountStore().put(ownerKey.getAddress(), owner);
+
+    TransferContract transfer = TransferContract.newBuilder()
+        .setOwnerAddress(ByteString.copyFrom(ownerKey.getAddress()))
+        .setToAddress(ByteString.copyFrom(receiverKey.getAddress()))
+        .setAmount(1L)
+        .build();
+    Transaction transaction = Transaction.newBuilder()
+        .setRawData(raw.newBuilder()
+            .addContract(Transaction.Contract.newBuilder()
+                .setType(ContractType.TransferContract)
+                .setParameter(Any.pack(transfer))))
+        .build();
+    TransactionCapsule capsule = new TransactionCapsule(transaction);
+    capsule.sign(ownerKey.getPrivKeyBytes());
+
+    Assert.assertTrue(capsule.validateSignature(dbManager.getAccountStore(),
+        dbManager.getDynamicPropertiesStore()));
+    capsule.setFeeLimit(1_000_000L);
+
+    Assert.assertThrows(ValidateSignatureException.class,
+        () -> capsule.validateSignature(dbManager.getAccountStore(),
+            dbManager.getDynamicPropertiesStore()));
   }
 
   @Test
